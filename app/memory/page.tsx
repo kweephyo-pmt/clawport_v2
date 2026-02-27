@@ -1,6 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import type { MemoryFile } from "@/lib/types";
+import { renderMarkdown, colorizeJson } from "@/lib/sanitize";
+import { Skeleton } from "@/components/ui/skeleton";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -17,81 +19,12 @@ function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function simpleMarkdown(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(
-      /^#### (.+)$/gm,
-      '<h4 class="text-[15px] font-semibold" style="color:var(--text-primary);margin-top:1rem;margin-bottom:0.25rem">$1</h4>'
-    )
-    .replace(
-      /^### (.+)$/gm,
-      '<h3 class="text-[17px] font-semibold" style="color:var(--text-primary);margin-top:1.25rem;margin-bottom:0.375rem">$1</h3>'
-    )
-    .replace(
-      /^## (.+)$/gm,
-      '<h2 class="text-[22px] font-semibold" style="color:var(--text-primary);margin-top:1.5rem;margin-bottom:0.5rem;padding-bottom:0.25rem;border-bottom:1px solid var(--separator)">$1</h2>'
-    )
-    .replace(
-      /^# (.+)$/gm,
-      '<h1 class="text-[28px] font-bold" style="color:var(--text-primary);margin-top:1rem;margin-bottom:0.75rem">$1</h1>'
-    )
-    .replace(
-      /\*\*(.+?)\*\*/g,
-      '<strong class="font-semibold" style="color:var(--text-primary)">$1</strong>'
-    )
-    .replace(
-      /`([^`]+)`/g,
-      '<code style="background:var(--fill-secondary);color:var(--accent);padding:2px 6px;border-radius:6px;font-size:13px;font-family:var(--font-mono)">$1</code>'
-    )
-    .replace(
-      /^- (.+)$/gm,
-      '<li class="ml-4 text-[15px] leading-[1.7] list-disc" style="color:var(--text-secondary)">$1</li>'
-    )
-    .replace(
-      /^(\d+)\. (.+)$/gm,
-      '<li class="ml-4 text-[15px] leading-[1.7] list-decimal" style="color:var(--text-secondary)">$2</li>'
-    )
-    .replace(
-      /\n{2,}/g,
-      '</p><p class="mb-3" style="color:var(--text-secondary)">'
-    )
-    .replace(/\n/g, "<br/>");
-}
-
-function colorizeJson(json: string): string {
-  return json
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(
-      /"([^"]+)"(?=\s*:)/g,
-      '<span style="color:var(--accent)">"$1"</span>'
-    )
-    .replace(
-      /:\s*"([^"]*?)"/g,
-      ': <span style="color:var(--system-green)">"$1"</span>'
-    )
-    .replace(
-      /:\s*(\d+\.?\d*)/g,
-      ': <span style="color:var(--system-blue)">$1</span>'
-    )
-    .replace(
-      /:\s*(true|false)/g,
-      ': <span style="color:#bf5af2">$1</span>'
-    )
-    .replace(
-      /:\s*(null)/g,
-      ': <span style="color:var(--text-tertiary)">$1</span>'
-    );
-}
-
 export default function MemoryPage() {
   const [files, setFiles] = useState<MemoryFile[]>([]);
   const [selected, setSelected] = useState<MemoryFile | null>(null);
   const [loading, setLoading] = useState(true);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const fileListRef = useRef<HTMLDivElement>(null);
 
   function refresh() {
     fetch("/api/memory")
@@ -106,6 +39,45 @@ export default function MemoryPage() {
   useEffect(() => {
     refresh();
   }, []);
+
+  // ESC key to deselect file
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && selected) {
+        setSelected(null);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selected]);
+
+  // Arrow key navigation in file list
+  const handleFileListKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (files.length === 0) return;
+      const currentIndex = selected
+        ? files.findIndex((f) => f.path === selected.path)
+        : -1;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const nextIndex = currentIndex < files.length - 1 ? currentIndex + 1 : 0;
+        setSelected(files[nextIndex]);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const prevIndex = currentIndex > 0 ? currentIndex - 1 : files.length - 1;
+        setSelected(files[prevIndex]);
+      }
+    },
+    [files, selected]
+  );
+
+  // Auto-focus content area when file selected
+  useEffect(() => {
+    if (selected && contentRef.current) {
+      contentRef.current.focus();
+    }
+  }, [selected]);
 
   const isJSON =
     selected?.label.includes("JSON") || selected?.path.endsWith(".json");
@@ -177,7 +149,7 @@ export default function MemoryPage() {
           className="text-[15px] leading-[1.7]"
           style={{ color: "var(--text-secondary)" }}
           dangerouslySetInnerHTML={{
-            __html: `<p class="mb-3" style="color:var(--text-secondary)">${simpleMarkdown(selected.content)}</p>`,
+            __html: `<p class="mb-3" style="color:var(--text-secondary)">${renderMarkdown(selected.content)}</p>`,
           }}
         />
       );
@@ -216,20 +188,30 @@ export default function MemoryPage() {
           <button
             onClick={refresh}
             className="hover:opacity-80 transition-opacity text-[16px]"
-            style={{ color: "var(--text-tertiary)" }}
+            style={{ color: "var(--text-tertiary)", background: "none", border: "none", cursor: "pointer" }}
+            aria-label="Refresh memory files"
           >
             &#8635;
           </button>
         </div>
 
         {/* File list */}
-        <div className="flex-1 overflow-y-auto">
+        <div
+          ref={fileListRef}
+          className="flex-1 overflow-y-auto"
+          role="listbox"
+          aria-label="Memory files"
+          tabIndex={0}
+          onKeyDown={handleFileListKeyDown}
+        >
           {loading ? (
-            <div
-              className="p-4 text-[14px] animate-pulse"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Loading...
+            <div className="p-4 flex flex-col gap-2" role="status" aria-label="Loading files">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex flex-col gap-1.5" style={{ padding: "4px 0" }}>
+                  <Skeleton style={{ width: "75%", height: 14 }} />
+                  <Skeleton style={{ width: "40%", height: 10 }} />
+                </div>
+              ))}
             </div>
           ) : (
             files.map((file) => {
@@ -238,6 +220,8 @@ export default function MemoryPage() {
                 <button
                   key={file.path}
                   onClick={() => setSelected(file)}
+                  role="option"
+                  aria-selected={isActive}
                   className="w-full text-left transition-colors"
                   style={{
                     height: 52,
@@ -248,6 +232,8 @@ export default function MemoryPage() {
                     borderLeft: isActive
                       ? "3px solid var(--accent)"
                       : "3px solid transparent",
+                    border: "none",
+                    cursor: "pointer",
                   }}
                   onMouseEnter={(e) => {
                     if (!isActive)
@@ -280,8 +266,10 @@ export default function MemoryPage() {
 
       {/* Main content */}
       <div
+        ref={contentRef}
+        tabIndex={-1}
         className="flex-1 flex flex-col overflow-hidden"
-        style={{ background: "var(--bg)" }}
+        style={{ background: "var(--bg)", outline: "none" }}
       >
         {selected ? (
           <>

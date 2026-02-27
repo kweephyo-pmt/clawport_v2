@@ -3,6 +3,7 @@ import "./globals.css";
 import { NavLinks } from "@/components/NavLinks";
 import { ThemeProvider } from "./providers";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { MobileSidebar } from "@/components/MobileSidebar";
 
 export const metadata: Metadata = {
   title: "Manor — Command Centre",
@@ -15,9 +16,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeProvider>
           <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-            {/* Apple Source List Sidebar */}
+            {/* Desktop sidebar — hidden on mobile */}
             <aside
-              className="w-[220px] flex-shrink-0 flex flex-col"
+              className="hidden md:flex w-[220px] flex-shrink-0 flex-col"
               style={{
                 background: 'var(--sidebar-bg)',
                 backdropFilter: 'var(--sidebar-backdrop)',
@@ -62,9 +63,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <ThemeToggle />
             </aside>
 
+            {/* Mobile sidebar */}
+            <MobileSidebar />
+
             <main className="flex-1 overflow-hidden relative">
               {/* Glass background orbs — only visible in glass theme */}
-              <div className="pointer-events-none fixed inset-0 overflow-hidden glass-orbs" aria-hidden>
+              <div className="pointer-events-none fixed inset-0 overflow-hidden glass-orbs" aria-hidden="true">
                 <div style={{
                   position: 'absolute', top: '15%', left: '20%',
                   width: 400, height: 400, borderRadius: '50%',

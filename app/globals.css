@@ -435,3 +435,15 @@ body {
 /* User bubble code blocks need inverted colors in light theme */
 .msg-user pre { background: rgba(0,0,0,0.15) !important; color: #000 !important; }
 .msg-user code { background: rgba(0,0,0,0.12) !important; color: #000 !important; }
+
+/* ============================================
+   Accessibility: Reduced Motion
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

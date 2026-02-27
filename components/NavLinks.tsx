@@ -18,9 +18,22 @@ export function NavLinks() {
 
   useEffect(() => {
     fetch("/api/agents")
-      .then((r) => r.json())
-      .then((agents: unknown[]) => setAgentCount(agents.length))
-      .catch(() => {});
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data: unknown) => {
+        if (Array.isArray(data)) {
+          setAgentCount(data.length);
+        }
+        // If the response is an error object, leave agentCount as null
+        // so the badge simply won't render.
+      })
+      .catch(() => {
+        // On failure, ensure we don't show a broken badge.
+        // agentCount stays null, so the count badge is hidden.
+        setAgentCount(null);
+      });
   }, []);
 
   function getActiveStyle() {
@@ -73,6 +86,8 @@ export function NavLinks() {
                 key={item.href}
                 href={item.href}
                 className="flex items-center gap-2.5 no-underline"
+                aria-label={item.label}
+                aria-current={isActive ? "page" : undefined}
                 style={{
                   height: '34px',
                   padding: '0 8px 0 12px',

@@ -123,6 +123,8 @@ export function ConversationView({ agent, conversation, onUpdate }: Conversation
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const messages = conversation?.messages || []
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -159,7 +161,8 @@ export function ConversationView({ agent, conversation, onUpdate }: Conversation
     setIsStreaming(true)
 
     // Build message history for API (role + content only)
-    const apiMessages = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
+    // Use ref to read the latest messages and avoid stale closure on concurrent sends
+    const apiMessages = [...messagesRef.current, userMsg].map(m => ({ role: m.role, content: m.content }))
 
     try {
       const res = await fetch(`/api/chat/${agent.id}`, {
@@ -204,9 +207,14 @@ export function ConversationView({ agent, conversation, onUpdate }: Conversation
       setIsStreaming(false)
       textareaRef.current?.focus()
     }
-  }, [input, isStreaming, agent.id, messages, onUpdate])
+  }, [input, isStreaming, agent.id, onUpdate])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      textareaRef.current?.blur()
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
@@ -273,6 +281,7 @@ export function ConversationView({ agent, conversation, onUpdate }: Conversation
             onClick={clearChat}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}
             title="Clear conversation"
+            aria-label="Clear conversation"
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 5h14" /><path d="M8 5V3.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V5" />
@@ -458,7 +467,7 @@ export function ConversationView({ agent, conversation, onUpdate }: Conversation
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
           {/* Attach button */}
-          <label style={{ cursor: 'pointer', color: 'var(--text-tertiary)', padding: 8, flexShrink: 0, fontSize: 18 }} title="Attach image">
+          <label style={{ cursor: 'pointer', color: 'var(--text-tertiary)', padding: 8, flexShrink: 0, fontSize: 18 }} title="Attach image" aria-label="Attach file">
             &#128206;
             <input
               type="file"
@@ -524,14 +533,15 @@ export function ConversationView({ agent, conversation, onUpdate }: Conversation
                 transition: 'transform 150ms ease',
               }}
               title="Send message"
+              aria-label="Send message"
             >
               &#8593;
             </button>
           </div>
         </div>
 
-        <p style={{ fontSize: 11, textAlign: 'center', marginTop: 8, marginBottom: 2, color: 'var(--text-tertiary)' }}>
-          &#8629; Send &middot; &#8679;&#8629; New line
+        <p style={{ fontSize: 11, textAlign: 'center', marginTop: 8, marginBottom: 2, color: 'var(--text-quaternary)' }}>
+          Enter to send &middot; Shift+Enter for newline
         </p>
       </div>
     </div>

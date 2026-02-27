@@ -1,6 +1,7 @@
 export const runtime = 'nodejs'
 
 import { getAgent } from '@/lib/agents'
+import { validateChatMessages } from '@/lib/validation'
 import OpenAI from 'openai'
 
 // Route through the OpenClaw gateway — no separate API key needed
@@ -23,7 +24,25 @@ export async function POST(
     })
   }
 
-  const { messages } = await request.json()
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return new Response(
+      JSON.stringify({ error: 'Invalid JSON in request body.' }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
+  const result = validateChatMessages(body)
+  if (!result.ok) {
+    return new Response(
+      JSON.stringify({ error: result.error }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
+  const { messages } = result
 
   const systemPrompt = agent.soul
     ? `${agent.soul}\n\nYou are speaking directly with John, your operator. Stay fully in character. Be concise — this is a live chat. 2-4 sentences unless detail is asked for. No em dashes.`

@@ -1,7 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import type { Agent, CronJob } from "@/lib/types";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ErrorState";
 
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return "never";
@@ -26,6 +28,20 @@ function timeAgo(dateStr: string | null): string {
   return `${days}d ago`;
 }
 
+function nextRunLabel(dateStr: string | null): string {
+  if (!dateStr) return "not scheduled";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "\u2014";
+  const diff = d.getTime() - Date.now();
+  if (diff < 0) return "overdue";
+  const mins = Math.floor(diff / 60000);
+  const hrs = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (mins < 60) return `in ${mins}m`;
+  if (hrs < 24) return `in ${hrs}h`;
+  return `in ${days}d`;
+}
+
 type Filter = "all" | "ok" | "error" | "idle";
 
 export default function CronsPage() {
@@ -35,24 +51,38 @@ export default function CronsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  function refresh() {
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setError(null);
     Promise.all([
-      fetch("/api/crons").then((r) => r.json()),
-      fetch("/api/agents").then((r) => r.json()),
-    ]).then(([c, a]) => {
-      setCrons(c);
-      setAgents(a);
-      setLastRefresh(new Date());
-      setLoading(false);
-    });
-  }
+      fetch("/api/crons").then((r) => {
+        if (!r.ok) throw new Error(`Crons API: ${r.status}`);
+        return r.json();
+      }),
+      fetch("/api/agents").then((r) => {
+        if (!r.ok) throw new Error(`Agents API: ${r.status}`);
+        return r.json();
+      }),
+    ])
+      .then(([c, a]) => {
+        if (Array.isArray(c)) setCrons(c);
+        if (Array.isArray(a)) setAgents(a);
+        setLastRefresh(new Date());
+        setLoading(false);
+      })
+      .catch((e) => {
+        setError(e.message);
+        setLoading(false);
+      });
+  }, []);
 
   useEffect(() => {
     refresh();
     const interval = setInterval(refresh, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refresh]);
 
   const agentMap = new Map(agents.map((a) => [a.id, a]));
   const statusOrder: Record<string, number> = { error: 0, idle: 1, ok: 2 };
@@ -78,6 +108,10 @@ export default function CronsPage() {
     { key: "error", label: "Errors", dotColor: "var(--system-red)" },
     { key: "idle", label: "Idle", dotColor: "var(--text-tertiary)" },
   ];
+
+  if (error && crons.length === 0) {
+    return <ErrorState message={`Failed to load crons: ${error}`} onRetry={refresh} />;
+  }
 
   return (
     <div
@@ -125,7 +159,8 @@ export default function CronsPage() {
           <button
             onClick={refresh}
             className="hover:opacity-80 transition-opacity text-[16px]"
-            style={{ color: "var(--text-tertiary)" }}
+            style={{ color: "var(--text-tertiary)", background: "none", border: "none", cursor: "pointer" }}
+            aria-label="Refresh cron data"
           >
             &#8635;
           </button>
@@ -133,19 +168,23 @@ export default function CronsPage() {
       </div>
 
       {/* Filter pills */}
-      <div className="px-6 py-3 flex items-center gap-2 overflow-x-auto flex-shrink-0">
+      <div className="px-6 py-3 flex items-center gap-2 overflow-x-auto flex-shrink-0" role="tablist" aria-label="Filter cron jobs by status">
         {pills.map((pill) => {
           const isActive = filter === pill.key;
           return (
             <button
               key={pill.key}
               onClick={() => setFilter(pill.key)}
+              role="tab"
+              aria-selected={isActive}
               className="flex items-center gap-2 flex-shrink-0"
               style={{
                 borderRadius: 20,
                 padding: "6px 14px",
                 fontSize: 13,
                 fontWeight: 500,
+                border: "none",
+                cursor: "pointer",
                 transition: "all 200ms var(--ease-smooth)",
                 ...(isActive
                   ? {
@@ -184,11 +223,26 @@ export default function CronsPage() {
       {/* Cron list */}
       <div className="flex-1 overflow-y-auto px-6 pb-6">
         {loading ? (
-          <div
-            className="flex items-center justify-center h-32 text-[15px] animate-pulse"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            Loading crons...
+          <div role="status" aria-label="Loading cron jobs" style={{
+            borderRadius: "var(--radius-md)",
+            overflow: "hidden",
+            background: "var(--material-regular)",
+            padding: "8px 16px",
+          }}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-3" style={{
+                minHeight: 44,
+                borderTop: i > 1 ? "1px solid var(--separator)" : undefined,
+                padding: "8px 0",
+              }}>
+                <Skeleton className="rounded-full" style={{ width: 8, height: 8, flexShrink: 0 }} />
+                <Skeleton style={{ width: "35%", height: 14 }} />
+                <div className="ml-auto flex items-center gap-3">
+                  <Skeleton style={{ width: 60, height: 12 }} />
+                  <Skeleton style={{ width: 70, height: 12 }} />
+                </div>
+              </div>
+            ))}
           </div>
         ) : filtered.length === 0 ? (
           <div
@@ -235,6 +289,15 @@ export default function CronsPage() {
                       setExpanded(isExpanded ? null : cron.id)
                     }
                     className="flex items-center cursor-pointer transition-colors"
+                    role="button"
+                    aria-expanded={isExpanded}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setExpanded(isExpanded ? null : cron.id);
+                      }
+                    }}
                     style={{
                       minHeight: 44,
                       padding: "0 16px",
@@ -317,6 +380,7 @@ export default function CronsPage() {
                             ? "rotate(90deg)"
                             : "rotate(0deg)",
                         }}
+                        aria-hidden="true"
                       >
                         &#8250;
                       </span>
@@ -329,6 +393,7 @@ export default function CronsPage() {
                       {cron.lastError && (
                         <div
                           className="mt-2 px-4 py-3"
+                          role="alert"
                           style={{
                             borderRadius: "var(--radius-sm)",
                             background: "rgba(255,69,58,0.06)",
@@ -359,7 +424,7 @@ export default function CronsPage() {
                             color: "var(--text-tertiary)",
                           }}
                         >
-                          Next run: {timeAgo(cron.nextRun)}
+                          Next run: {nextRunLabel(cron.nextRun)}
                         </span>
                         <span
                           className="text-[12px] font-mono"

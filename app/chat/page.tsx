@@ -70,14 +70,6 @@ function MessengerApp() {
     }
   }, [activeAgent?.id])
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--bg)' }}>
-        <span style={{ color: 'var(--text-tertiary)', fontSize: 15 }}>Loading...</span>
-      </div>
-    )
-  }
-
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--bg)' }}>
       <AgentList
@@ -85,6 +77,7 @@ function MessengerApp() {
         conversations={conversations}
         activeId={activeAgentId}
         onSelect={handleSelectAgent}
+        loading={loading}
       />
 
       {activeAgent && conversations[activeAgent.id] ? (

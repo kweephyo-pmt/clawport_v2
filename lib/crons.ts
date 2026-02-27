@@ -41,11 +41,6 @@ export async function getCrons(): Promise<CronJob[]> {
       ? parsed
       : parsed.jobs ?? parsed.data ?? []
 
-    // Debug: log the raw shape of the first cron item
-    if (jobs.length > 0) {
-      process.stderr.write(JSON.stringify(Object.keys(jobs[0] as Record<string, unknown>)) + '\n')
-    }
-
     return jobs.map((job: unknown) => {
       const j = job as Record<string, unknown>
       const state = (j.state as Record<string, unknown>) || {}
@@ -86,7 +81,9 @@ export async function getCrons(): Promise<CronJob[]> {
         agentId: matchAgent(name),
       }
     })
-  } catch {
-    return []
+  } catch (err) {
+    throw new Error(
+      `Failed to fetch cron jobs: ${err instanceof Error ? err.message : String(err)}`
+    )
   }
 }
