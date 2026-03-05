@@ -111,6 +111,25 @@ function scanSubAgentDir(dirPath: string): { fileName: string; content: string }
   }
 }
 
+/**
+ * Scan a parent agent directory for child subdirectories containing SOUL.md.
+ * Skips sub-agents/ and members/ (already handled by scanSubAgentDir).
+ */
+function scanSubdirAgents(parentDir: string): { dirName: string; content: string }[] {
+  if (!existsSync(parentDir)) return []
+  try {
+    return readdirSync(parentDir, { withFileTypes: true })
+      .filter(e => e.isDirectory() && e.name !== 'sub-agents' && e.name !== 'members')
+      .map(e => {
+        const content = safeRead(join(parentDir, e.name, 'SOUL.md'))
+        return content ? { dirName: e.name, content } : null
+      })
+      .filter((x): x is { dirName: string; content: string } => x !== null)
+  } catch {
+    return []
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Auto-discovery
 // ---------------------------------------------------------------------------
@@ -147,6 +166,7 @@ function discoverAgents(workspacePath: string): AgentEntry[] | null {
 
   const discovered: AgentEntry[] = []
   let colorIndex = 0
+  const directReportIds: string[] = []
 
   // --- Root agent ---
   let rootId = 'main'
@@ -177,9 +197,6 @@ function discoverAgents(workspacePath: string): AgentEntry[] | null {
       }
     }
 
-    // Collect all agent IDs that report to root (including those without SOUL.md but with sub-agents)
-    const directReportIds: string[] = []
-
     discovered.push({
       id: rootId,
       name: rootName,
@@ -197,6 +214,7 @@ function discoverAgents(workspacePath: string): AgentEntry[] | null {
 
     // We'll fill directReportIds as we discover agents below
     for (const dirName of allAgentDirs) {
+      if (dirName === rootId) continue // root-matching dir scanned in main loop
       const hasSoul = existsSync(join(agentsDir, dirName, 'SOUL.md'))
       const hasSubAgents = existsSync(join(agentsDir, dirName, 'sub-agents'))
       const hasMembers = existsSync(join(agentsDir, dirName, 'members'))
@@ -208,8 +226,61 @@ function discoverAgents(workspacePath: string): AgentEntry[] | null {
 
   // --- Top-level agents ---
   for (const dirName of allAgentDirs) {
-    // Skip if directory name matches the root agent ID (already added above)
-    if (hasRoot && dirName === rootId) continue
+    // Root-matching directory: scan for sub-agents but don't create a duplicate root entry
+    if (hasRoot && dirName === rootId) {
+      const rootAgentDir = join(agentsDir, dirName)
+      const rootSubFiles = [
+        ...scanSubAgentDir(join(rootAgentDir, 'sub-agents')),
+        ...scanSubAgentDir(join(rootAgentDir, 'members')),
+      ]
+      const rootSubIds = new Set<string>()
+      for (const sub of rootSubFiles) {
+        const subId = `${rootId}-${basename(sub.fileName, '.md').toLowerCase()}`
+        rootSubIds.add(subId)
+        directReportIds.push(subId)
+        const subParsed = parseSoulHeading(sub.content)
+        const subName = subParsed.name || slugToName(basename(sub.fileName, '.md'))
+        const subTitle = subParsed.title || 'Agent'
+        discovered.push({
+          id: subId,
+          name: subName,
+          title: subTitle,
+          reportsTo: rootId,
+          directReports: [],
+          soulPath: null,
+          voiceId: null,
+          color: DISCOVER_COLORS[colorIndex++ % DISCOVER_COLORS.length],
+          emoji: subName.charAt(0).toUpperCase(),
+          tools: ['read', 'write'],
+          memoryPath: null,
+          description: `${subName} agent.`,
+        })
+      }
+
+      for (const sub of scanSubdirAgents(rootAgentDir)) {
+        const subId = `${rootId}-${sub.dirName}`
+        if (rootSubIds.has(subId)) continue
+        directReportIds.push(subId)
+        const subParsed = parseSoulHeading(sub.content)
+        const subName = subParsed.name || slugToName(sub.dirName)
+        const subTitle = subParsed.title || 'Agent'
+        discovered.push({
+          id: subId,
+          name: subName,
+          title: subTitle,
+          reportsTo: rootId,
+          directReports: [],
+          soulPath: `agents/${rootId}/${sub.dirName}/SOUL.md`,
+          voiceId: null,
+          color: DISCOVER_COLORS[colorIndex++ % DISCOVER_COLORS.length],
+          emoji: subName.charAt(0).toUpperCase(),
+          tools: ['read', 'write'],
+          memoryPath: null,
+          description: `${subName} agent.`,
+        })
+      }
+      continue
+    }
 
     const soulFile = join(agentsDir, dirName, 'SOUL.md')
     const hasSoul = existsSync(soulFile)
@@ -268,6 +339,32 @@ function discoverAgents(workspacePath: string): AgentEntry[] | null {
         reportsTo: dirName,
         directReports: [],
         soulPath: null, // sub-agents use non-standard paths, soul loaded differently
+        voiceId: null,
+        color: DISCOVER_COLORS[colorIndex++ % DISCOVER_COLORS.length],
+        emoji: subName.charAt(0).toUpperCase(),
+        tools: ['read', 'write'],
+        memoryPath: null,
+        description: `${subName} agent.`,
+      })
+    }
+
+    // Discover subdirectory agents (child dirs with SOUL.md)
+    const subdirAgents = scanSubdirAgents(join(agentsDir, dirName))
+    const existingSubIds = new Set(subAgentIds)
+    for (const sub of subdirAgents) {
+      const subId = `${dirName}-${sub.dirName}`
+      if (existingSubIds.has(subId)) continue
+      subAgentIds.push(subId)
+      const subParsed = parseSoulHeading(sub.content)
+      const subName = subParsed.name || slugToName(sub.dirName)
+      const subTitle = subParsed.title || 'Agent'
+      discovered.push({
+        id: subId,
+        name: subName,
+        title: subTitle,
+        reportsTo: dirName,
+        directReports: [],
+        soulPath: `agents/${dirName}/${sub.dirName}/SOUL.md`,
         voiceId: null,
         color: DISCOVER_COLORS[colorIndex++ % DISCOVER_COLORS.length],
         emoji: subName.charAt(0).toUpperCase(),

@@ -712,6 +712,209 @@ describe('auto-discovery from workspace', () => {
     expect(kaze.name).toBe('KAZE')
     expect(kaze.title).toBe('Flight Research Agent')
   })
+
+  it('discovers subdirectory agents with SOUL.md (outpost pattern)', async () => {
+    vi.stubEnv('WORKSPACE_PATH', '/tmp/ws')
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p === '/tmp/ws/clawport/agents.json') return false
+      if (p === '/tmp/ws/SOUL.md') return false
+      if (p === '/tmp/ws/agents') return true
+      if (p === '/tmp/ws/agents/outpost/SOUL.md') return true
+      if (p === '/tmp/ws/agents/outpost') return true
+      if (p === '/tmp/ws/agents/outpost/sub-agents') return false
+      if (p === '/tmp/ws/agents/outpost/members') return false
+      if (p === '/tmp/ws/agents/outpost/scout/SOUL.md') return true
+      if (p === '/tmp/ws/agents/outpost/mirror/SOUL.md') return true
+      return false
+    })
+
+    mockReaddirSync.mockImplementation((p: string) => {
+      if (String(p) === '/tmp/ws/agents') {
+        return [{ name: 'outpost', isDirectory: () => true }]
+      }
+      if (String(p) === '/tmp/ws/agents/outpost') {
+        return [
+          { name: 'scout', isDirectory: () => true },
+          { name: 'mirror', isDirectory: () => true },
+        ]
+      }
+      return []
+    })
+
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p === '/tmp/ws/agents/outpost/SOUL.md') return '# OUTPOST — Forward Operations'
+      if (p === '/tmp/ws/agents/outpost/scout/SOUL.md') return '# SCOUT — Reconnaissance Agent'
+      if (p === '/tmp/ws/agents/outpost/mirror/SOUL.md') return '# MIRROR — Reflection Agent'
+      throw new Error('ENOENT')
+    })
+
+    const agents = await getAgents()
+    const outpost = agents.find(a => a.id === 'outpost')!
+    expect(outpost.name).toBe('OUTPOST')
+    expect(outpost.directReports).toContain('outpost-scout')
+    expect(outpost.directReports).toContain('outpost-mirror')
+
+    const scout = agents.find(a => a.id === 'outpost-scout')!
+    expect(scout.name).toBe('SCOUT')
+    expect(scout.title).toBe('Reconnaissance Agent')
+    expect(scout.reportsTo).toBe('outpost')
+    expect(scout.soulPath).toBe('agents/outpost/scout/SOUL.md')
+
+    const mirror = agents.find(a => a.id === 'outpost-mirror')!
+    expect(mirror.name).toBe('MIRROR')
+    expect(mirror.title).toBe('Reflection Agent')
+    expect(mirror.reportsTo).toBe('outpost')
+    expect(mirror.soulPath).toBe('agents/outpost/mirror/SOUL.md')
+  })
+
+  it('scans sub-agents from root-matching directory', async () => {
+    vi.stubEnv('WORKSPACE_PATH', '/tmp/ws')
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p === '/tmp/ws/clawport/agents.json') return false
+      if (p === '/tmp/ws/SOUL.md') return true
+      if (p === '/tmp/ws/IDENTITY.md') return true
+      if (p === '/tmp/ws/agents') return true
+      if (p === '/tmp/ws/agents/jarvis/SOUL.md') return true
+      if (p === '/tmp/ws/agents/jarvis') return true
+      if (p === '/tmp/ws/agents/jarvis/sub-agents') return true
+      if (p === '/tmp/ws/agents/jarvis/sub-agents/SCRIBE.md') return true
+      if (p === '/tmp/ws/agents/jarvis/members') return false
+      if (p === '/tmp/ws/agents/vera/SOUL.md') return true
+      if (p === '/tmp/ws/agents/vera/sub-agents') return false
+      if (p === '/tmp/ws/agents/vera/members') return false
+      return false
+    })
+
+    mockReaddirSync.mockImplementation((p: string) => {
+      if (String(p) === '/tmp/ws/agents') {
+        return [
+          { name: 'jarvis', isDirectory: () => true },
+          { name: 'vera', isDirectory: () => true },
+        ]
+      }
+      if (String(p) === '/tmp/ws/agents/jarvis/sub-agents') {
+        return ['SCRIBE.md']
+      }
+      return []
+    })
+
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p === '/tmp/ws/IDENTITY.md') return '- **Name:** Jarvis\n- **Emoji:** 🤖'
+      if (p === '/tmp/ws/SOUL.md') return '# SOUL.md - Who You Are'
+      if (p === '/tmp/ws/agents/jarvis/SOUL.md') return '# SOUL.md — Jarvis'
+      if (p === '/tmp/ws/agents/jarvis/sub-agents/SCRIBE.md') return '# SCRIBE — Documentation Writer'
+      if (p === '/tmp/ws/agents/vera/SOUL.md') return '# SOUL.md — VERA'
+      throw new Error('ENOENT')
+    })
+
+    const agents = await getAgents()
+    const root = agents.find(a => a.id === 'jarvis')!
+    expect(root.reportsTo).toBeNull()
+    expect(root.directReports).toContain('jarvis-scribe')
+    expect(root.directReports).toContain('vera')
+
+    const scribe = agents.find(a => a.id === 'jarvis-scribe')!
+    expect(scribe.name).toBe('SCRIBE')
+    expect(scribe.title).toBe('Documentation Writer')
+    expect(scribe.reportsTo).toBe('jarvis')
+
+    expect(agents.filter(a => a.id === 'jarvis')).toHaveLength(1)
+  })
+
+  it('ignores data directories without SOUL.md', async () => {
+    vi.stubEnv('WORKSPACE_PATH', '/tmp/ws')
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p === '/tmp/ws/clawport/agents.json') return false
+      if (p === '/tmp/ws/SOUL.md') return false
+      if (p === '/tmp/ws/agents') return true
+      if (p === '/tmp/ws/agents/robin/SOUL.md') return true
+      if (p === '/tmp/ws/agents/robin/sub-agents') return false
+      if (p === '/tmp/ws/agents/robin/members') return false
+      return false
+    })
+
+    mockReaddirSync.mockImplementation((p: string) => {
+      if (String(p) === '/tmp/ws/agents') {
+        return [{ name: 'robin', isDirectory: () => true }]
+      }
+      if (String(p) === '/tmp/ws/agents/robin') {
+        return [
+          { name: 'briefs', isDirectory: () => true },
+          { name: 'state.json', isDirectory: () => false },
+        ]
+      }
+      return []
+    })
+
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p === '/tmp/ws/agents/robin/SOUL.md') return '# ROBIN — Field Intel Operator'
+      throw new Error('ENOENT')
+    })
+
+    const agents = await getAgents()
+    const robin = agents.find(a => a.id === 'robin')!
+    expect(robin.name).toBe('ROBIN')
+    expect(robin.directReports).toEqual([])
+    expect(agents.find(a => a.id === 'robin-briefs')).toBeUndefined()
+  })
+
+  it('discovers both flat sub-agents and subdirectory agents', async () => {
+    vi.stubEnv('WORKSPACE_PATH', '/tmp/ws')
+
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p === '/tmp/ws/clawport/agents.json') return false
+      if (p === '/tmp/ws/SOUL.md') return false
+      if (p === '/tmp/ws/agents') return true
+      if (p === '/tmp/ws/agents/herald/SOUL.md') return true
+      if (p === '/tmp/ws/agents/herald') return true
+      if (p === '/tmp/ws/agents/herald/sub-agents') return true
+      if (p === '/tmp/ws/agents/herald/sub-agents/MAVEN.md') return true
+      if (p === '/tmp/ws/agents/herald/members') return false
+      if (p === '/tmp/ws/agents/herald/quill/SOUL.md') return true
+      return false
+    })
+
+    mockReaddirSync.mockImplementation((p: string) => {
+      if (String(p) === '/tmp/ws/agents') {
+        return [{ name: 'herald', isDirectory: () => true }]
+      }
+      if (String(p) === '/tmp/ws/agents/herald/sub-agents') {
+        return ['MAVEN.md']
+      }
+      if (String(p) === '/tmp/ws/agents/herald') {
+        return [
+          { name: 'sub-agents', isDirectory: () => true },
+          { name: 'quill', isDirectory: () => true },
+        ]
+      }
+      return []
+    })
+
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p === '/tmp/ws/agents/herald/SOUL.md') return '# SOUL.md — HERALD'
+      if (p === '/tmp/ws/agents/herald/sub-agents/MAVEN.md') return '# MAVEN — LinkedIn Strategist'
+      if (p === '/tmp/ws/agents/herald/quill/SOUL.md') return '# QUILL — Content Writer'
+      throw new Error('ENOENT')
+    })
+
+    const agents = await getAgents()
+    const herald = agents.find(a => a.id === 'herald')!
+    expect(herald.directReports).toContain('herald-maven')
+    expect(herald.directReports).toContain('herald-quill')
+
+    const maven = agents.find(a => a.id === 'herald-maven')!
+    expect(maven.name).toBe('MAVEN')
+    expect(maven.reportsTo).toBe('herald')
+    expect(maven.soulPath).toBeNull()
+
+    const quill = agents.find(a => a.id === 'herald-quill')!
+    expect(quill.name).toBe('QUILL')
+    expect(quill.reportsTo).toBe('herald')
+    expect(quill.soulPath).toBe('agents/herald/quill/SOUL.md')
+  })
 })
 
 // ---------------------------------------------------------------------------
