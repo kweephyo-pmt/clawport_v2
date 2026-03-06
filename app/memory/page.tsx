@@ -728,61 +728,101 @@ function HybridBalanceBar({ config }: { config: MemoryConfig }) {
 
 /* ─── Guide: Best Practices ──────────────────────────────────── */
 
-const BEST_PRACTICES = [
-  "Keep MEMORY.md concise -- curated facts, not running logs",
-  "Use daily logs for ephemeral context that fades naturally",
-  "Configure temporal decay for large projects (reduces stale noise)",
-  "Enable MMR to reduce duplicate search results",
-  "Set half-life based on project velocity (faster = shorter)",
-  "Review and prune old daily logs periodically",
+const BEST_PRACTICE_SECTIONS = [
+  {
+    title: "Writing to Memory",
+    color: "var(--system-green)",
+    tips: [
+      { do: true, text: "Keep MEMORY.md concise -- curated facts, not running logs" },
+      { do: true, text: "Use daily logs (YYYY-MM-DD.md) for ephemeral session context" },
+      { do: false, text: "Don't dump raw conversation transcripts into memory files" },
+      { do: true, text: "Structure entries with clear headers so search can find them" },
+    ],
+  },
+  {
+    title: "Search & Retrieval",
+    color: "var(--system-blue)",
+    tips: [
+      { do: true, text: "Enable hybrid search -- combines semantic + keyword matching" },
+      { do: true, text: "Turn on MMR (Maximal Marginal Relevance) to reduce duplicate results" },
+      { do: true, text: "Configure temporal decay so stale daily logs rank lower over time" },
+      { do: false, text: "Don't set half-life too short -- important context needs time to be useful" },
+    ],
+  },
+  {
+    title: "Maintenance",
+    color: "var(--system-orange)",
+    tips: [
+      { do: true, text: "Review and prune old daily logs periodically" },
+      { do: true, text: "Promote recurring patterns from daily logs into evergreen files" },
+      { do: true, text: "Enable memory flush to auto-compact context before token limits" },
+      { do: false, text: "Don't let MEMORY.md grow past ~200 lines -- split into topic files" },
+    ],
+  },
 ];
 
 function BestPractices() {
   return (
-    <div
-      style={{
-        background: "var(--material-regular)",
-        border: "1px solid var(--separator)",
-        borderRadius: "var(--radius-md)",
-        padding: "var(--space-4)",
-      }}
-    >
-      <div
-        style={{
-          fontSize: "var(--text-caption1)",
-          color: "var(--text-tertiary)",
-          fontWeight: "var(--weight-medium)",
-          marginBottom: "var(--space-3)",
-        }}
-      >
-        Best Practices
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-        {BEST_PRACTICES.map((tip, i) => (
-          <div key={i} className="flex items-start" style={{ gap: "var(--space-2)" }}>
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              style={{ flexShrink: 0, marginTop: 2 }}
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+      {BEST_PRACTICE_SECTIONS.map((section) => (
+        <div
+          key={section.title}
+          style={{
+            background: "var(--material-regular)",
+            border: "1px solid var(--separator)",
+            borderRadius: "var(--radius-md)",
+            padding: "var(--space-4)",
+          }}
+        >
+          <div
+            className="flex items-center"
+            style={{ gap: "var(--space-2)", marginBottom: "var(--space-3)" }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: section.color,
+                flexShrink: 0,
+              }}
+            />
+            <span
+              style={{
+                fontSize: "var(--text-footnote)",
+                color: "var(--text-primary)",
+                fontWeight: "var(--weight-semibold)",
+              }}
             >
-              <circle cx="8" cy="8" r="7" stroke="var(--system-green)" strokeWidth="1.5" />
-              <polyline
-                points="5 8 7 10 11 6"
-                stroke="var(--system-green)"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            </svg>
-            <span style={{ fontSize: "var(--text-caption1)", color: "var(--text-secondary)", lineHeight: "var(--leading-relaxed)" }}>
-              {tip}
+              {section.title}
             </span>
           </div>
-        ))}
-      </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+            {section.tips.map((tip, i) => (
+              <div key={i} className="flex items-start" style={{ gap: "var(--space-2)" }}>
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "1px 5px",
+                    borderRadius: 3,
+                    flexShrink: 0,
+                    marginTop: 1,
+                    lineHeight: "14px",
+                    background: tip.do ? "rgba(48,209,88,0.12)" : "rgba(255,69,58,0.12)",
+                    color: tip.do ? "var(--system-green)" : "var(--system-red)",
+                  }}
+                >
+                  {tip.do ? "DO" : "DON'T"}
+                </span>
+                <span style={{ fontSize: "var(--text-caption1)", color: "var(--text-secondary)", lineHeight: "var(--leading-relaxed)" }}>
+                  {tip.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1771,13 +1811,31 @@ export default function MemoryPage() {
                 className="overflow-y-auto h-full"
                 style={{ padding: "var(--space-4) var(--space-6) var(--space-6)" }}
               >
-                <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-                  {config && <DecayVisualizer config={config} />}
-                  {config && <HybridBalanceBar config={config} />}
-                  {config && <FlushSection config={config} />}
-                  <BestPractices />
-                  <FileReference />
-                </div>
+                {/* Best practices -- lead section */}
+                <BestPractices />
+
+                {/* Config visualizers */}
+                {config && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, 1fr)",
+                      gap: "var(--space-3)",
+                      marginTop: "var(--space-4)",
+                    }}
+                    className="guide-config-grid"
+                  >
+                    <DecayVisualizer config={config} />
+                    <HybridBalanceBar config={config} />
+                    <FlushSection config={config} />
+                    <FileReference />
+                  </div>
+                )}
+                {!config && (
+                  <div style={{ marginTop: "var(--space-4)" }}>
+                    <FileReference />
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -1787,6 +1845,9 @@ export default function MemoryPage() {
       <style>{`
         @media (max-width: 640px) {
           .overview-cards-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .guide-config-grid {
             grid-template-columns: 1fr !important;
           }
         }
