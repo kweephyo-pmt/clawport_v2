@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="clawport-logo.png" alt="ClawPort" width="160" />
+<img src="https://raw.githubusercontent.com/JohnRiceML/clawport-ui/main/clawport-logo.png" alt="ClawPort" width="160" />
 
 # ClawPort
 
