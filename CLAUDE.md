@@ -41,13 +41,21 @@ ClawPort is a Next.js 16 dashboard for managing OpenClaw AI agents. It provides 
 ## Environment Variables
 
 ```env
-WORKSPACE_PATH       # Required -- path to .openclaw/workspace
+WORKSPACE_PATH       # Required -- path to .openclaw workspace (auto-detected)
 OPENCLAW_BIN         # Required -- path to openclaw binary
 OPENCLAW_GATEWAY_TOKEN  # Required -- gateway auth token
 ELEVENLABS_API_KEY   # Optional -- voice indicators
 ```
 
 Run `npm run setup` to auto-detect all required values from your local OpenClaw installation.
+
+**Workspace detection order:** `~/.openclaw/agents/main/workspace` (current layout) → `~/.openclaw/workspace` (legacy). Falls back to manual prompt if neither exists.
+
+**Global install:** When installed via `npm install -g clawport-ui`, `.env.local` may not be writable in the package directory. Setup falls back to `~/.config/clawport-ui/.env.local` (XDG-compliant). The CLI (`bin/clawport.mjs`) checks both locations when loading env vars.
+
+### Dev Server
+
+`next.config.mjs` sets `allowedDevOrigins: ["*"]` so the dev server works over Tailscale, LAN, or any non-localhost origin without cross-origin errors.
 
 ## Architecture
 
@@ -284,8 +292,8 @@ Used by: `lib/memory.ts`, `lib/cron-runs.ts`, `lib/kanban/chat-store.ts`, `lib/c
 
 | File | Purpose |
 |------|---------|
-| `bin/clawport.mjs` | CLI entry point -- `clawport dev`, `clawport setup`, `clawport status`, etc. Resolves package root via `import.meta.url` |
-| `scripts/setup.mjs` | `npm run setup` / `clawport setup` -- auto-detects WORKSPACE_PATH, OPENCLAW_BIN, gateway token; writes `.env.local`. Accepts `--cwd=<path>` flag for CLI usage |
+| `bin/clawport.mjs` | CLI entry point -- `clawport dev`, `clawport setup`, `clawport status`, etc. Resolves package root via `import.meta.url`. Loads `.env.local` from package dir or `~/.config/clawport-ui/` fallback via `getEnvLocalPath()` |
+| `scripts/setup.mjs` | `npm run setup` / `clawport setup` -- auto-detects WORKSPACE_PATH (current + legacy paths), OPENCLAW_BIN, gateway token; writes `.env.local`. Falls back to `~/.config/clawport-ui/` if package dir is not writable. Accepts `--cwd=<path>` flag. Can auto-enable HTTP chat completions endpoint in `openclaw.json`. |
 
 ## Testing
 
