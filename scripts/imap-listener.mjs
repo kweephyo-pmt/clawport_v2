@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import crypto from 'node:crypto';
+import nodemailer from 'nodemailer';
 
 // Configuration
 const IMAP_CONFIG = {
@@ -17,6 +18,18 @@ const IMAP_CONFIG = {
     },
     logger: false
 };
+
+const SMTP_CONFIG = {
+    host: 'smtppro.zoho.com',
+    port: 465,
+    secure: true,
+    auth: {
+        user: 'agent@tbs-marketing.com',
+        pass: '$$H10S0r*DvhR!lsK%'
+    }
+};
+
+const mailer = nodemailer.createTransport(SMTP_CONFIG);
 
 // Use .env.local if present
 const pkgRoot = process.cwd();
@@ -162,3 +175,70 @@ checkEmails();
 
 // Poll every 60 seconds
 setInterval(checkEmails, 60000);
+
+// Background job to check for completed tasks and reply
+async function checkCompletedProjects() {
+    const inboxPath = getInboxFilePath();
+    if (!fs.existsSync(inboxPath)) return;
+
+    try {
+        const inbox = JSON.parse(fs.readFileSync(inboxPath, 'utf-8'));
+        let modified = false;
+
+        for (let i = 0; i < inbox.length; i++) {
+            const project = inbox[i];
+
+            // Only care about in-progress projects (meaning UI has picked them up and agents are working)
+            if (project.status === 'in-progress') {
+                // If every single task generated for this project is marked as "done" or "review"
+                const allFinished = project.tasks.every(t => t.status === 'done' || t.status === 'review');
+
+                if (allFinished) {
+                    console.log(`Project ${project.id} is fully completed! Preparing reply to ${project.from}...`);
+
+                    // Retrieve actual ticket work results from the kanban store to compile the email
+                    const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json'); // approximate
+                    let detailedReport = '';
+
+                    try {
+                        let finalMessage = `Hello,\n\nYour task "${project.subject}" has been successfully completed by the Agent Team.\n\nHere is a summary of the outcomes:\n\n`;
+
+                        project.tasks.forEach(task => {
+                            finalMessage += `[${task.title}] - Status: Completed\n`;
+                        });
+
+                        finalMessage += '\nBest,\nYour Clawport AI Team';
+                        detailedReport = finalMessage;
+
+                    } catch (e) {
+                        detailedReport = `Hello, your requested work for "${project.subject}" has successfully finished.`;
+                    }
+
+                    // Send the email via SMTP!
+                    await mailer.sendMail({
+                        from: '"Clawport Agents" <agent@tbs-marketing.com>',
+                        to: project.from,
+                        subject: `Re: ${project.subject} (Completed)`,
+                        text: detailedReport
+                    });
+
+                    console.log(`Reply sent for Project ${project.id}`);
+
+                    // Mark project as totally complete so we don't email them again
+                    project.status = 'complete';
+                    modified = true;
+                }
+            }
+        }
+
+        if (modified) {
+            fs.writeFileSync(inboxPath, JSON.stringify(inbox, null, 2));
+        }
+
+    } catch (e) {
+        console.error('Error checking completed projects', e);
+    }
+}
+
+// Check for completed projects every 2 minutes
+setInterval(checkCompletedProjects, 120000);
