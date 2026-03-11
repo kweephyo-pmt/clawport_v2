@@ -92,7 +92,7 @@ IMPORTANT: ONLY output valid JSON. Nothing else. No markdown wrapping. Just the 
 
     try {
         const completion = await openai.chat.completions.create({
-            model: 'claude-sonnet-4-6',
+            model: 'kimi2.5',
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.2,
         });
