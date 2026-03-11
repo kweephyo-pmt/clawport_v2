@@ -53,6 +53,53 @@ export default function KanbanPage() {
     loadData()
   }, [loadData])
 
+  // Polling for email webhooks
+  useEffect(() => {
+    if (loading || agents.length === 0) return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/webhooks/email')
+        if (!res.ok) return
+        const data = await res.json()
+        const pendingProjects = data.projects?.filter((p: any) => p.status === 'pending') || []
+
+        if (pendingProjects.length === 0) return
+
+        setTickets((prev) => {
+          let nextTickets = { ...prev }
+          for (const p of pendingProjects) {
+            p.tasks.forEach((t: any) => {
+              // Assign a random agent to distribute work
+              const agent = agents[Math.floor(Math.random() * agents.length)]
+              nextTickets = createTicket(nextTickets, {
+                title: `[${p.subject || 'Email'}] ${t.title}`,
+                description: `${t.description}\n\n---\nFrom: ${p.from}\nProject: ${p.subject}\nEmail Content:\n${p.body}`,
+                priority: t.priority || 'medium',
+                status: 'todo',
+                assigneeId: agent?.id || null,
+                assigneeRole: t.assigneeRole || null,
+                workState: 'idle'
+              })
+            })
+          }
+          return nextTickets
+        })
+
+        for (const p of pendingProjects) {
+          // mark project as in-progress
+          await fetch('/api/webhooks/email', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: p.id, status: 'in-progress' })
+          })
+        }
+      } catch (e) {
+        console.error('Email poll error', e)
+      }
+    }, 15000)
+    return () => clearInterval(interval)
+  }, [loading, agents])
+
   // Persist tickets whenever they change
   useEffect(() => {
     if (!loading) {
