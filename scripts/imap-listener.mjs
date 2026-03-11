@@ -136,8 +136,14 @@ IMPORTANT: ONLY output valid JSON. Nothing else. No markdown wrapping. Just the 
     }
 }
 
+let isCheckingEmails = false;
+
 async function checkEmails() {
+    if (isCheckingEmails) return;
+    isCheckingEmails = true;
+
     const client = new ImapFlow(IMAP_CONFIG);
+    const pendingEmails = [];
 
     try {
         await client.connect();
@@ -148,15 +154,12 @@ async function checkEmails() {
             const messages = client.fetch({ unseen: true }, { source: true, uid: true });
 
             for await (let message of messages) {
-                const mail = await simpleParser(message.source);
-                const subject = mail.subject;
-                const textBody = mail.text || mail.html || '';
-                const from = mail.from?.value[0]?.address || 'Unknown';
+                pendingEmails.push({ source: message.source, uid: message.uid });
+            }
 
-                await processEmail(subject, textBody, from);
-
-                // Mark as seen
-                await client.messageFlagsAdd({ uid: message.uid }, ['\\Seen'], { uid: true });
+            // Mark as seen immediately so we don't fetch them again
+            for (const msg of pendingEmails) {
+                await client.messageFlagsAdd({ uid: msg.uid }, ['\\Seen'], { uid: true });
             }
 
         } finally {
@@ -167,6 +170,28 @@ async function checkEmails() {
     } finally {
         await client.logout();
     }
+
+    // Process them offline so IMAP doesn't timeout waiting for LLM
+    for (const msg of pendingEmails) {
+        try {
+            const mail = await simpleParser(msg.source);
+            const subject = mail.subject || '';
+            const textBody = mail.text || mail.html || '';
+            const from = mail.from?.value[0]?.address || 'Unknown';
+
+            // Ignore system emails from Zoho or no-reply addresses
+            if (from.toLowerCase().includes('zoho.com') || from.toLowerCase().includes('no-reply')) {
+                console.log(`Skipping automated/system email from: ${from}`);
+                continue;
+            }
+
+            await processEmail(subject, textBody, from);
+        } catch (e) {
+            console.error('Failed to parse downloaded email:', e);
+        }
+    }
+
+    isCheckingEmails = false;
 }
 
 // Run immediately and then conditionally via setInterval loop
