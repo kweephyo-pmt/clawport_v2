@@ -179,9 +179,13 @@ async function checkEmails() {
             const textBody = mail.text || mail.html || '';
             const from = mail.from?.value[0]?.address || 'Unknown';
 
-            // Ignore system emails from Zoho or no-reply addresses
-            if (from.toLowerCase().includes('zoho.com') || from.toLowerCase().includes('no-reply')) {
-                console.log(`Skipping automated/system email from: ${from}`);
+            const fromAddr = from.toLowerCase();
+
+            // Only process emails from our authorized senders
+            const isAuthorized = fromAddr.endsWith('@tbs-marketing.com') || fromAddr === 'leo.tbsmarketing@gmail.com';
+
+            if (!isAuthorized) {
+                console.log(`Skipping unauthorized sender: ${from}`);
                 continue;
             }
 
