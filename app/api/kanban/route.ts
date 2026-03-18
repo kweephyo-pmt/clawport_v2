@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic'
 import fs from 'node:fs'
 import path from 'node:path'
 import { requireEnv } from '@/lib/env'

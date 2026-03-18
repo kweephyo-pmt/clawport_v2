@@ -36,7 +36,7 @@ export default function KanbanPage() {
 
     try {
       // 1. Load tickets from Server API
-      const ticketRes = await fetch('/api/kanban')
+      const ticketRes = await fetch('/api/kanban', { cache: 'no-store' })
       if (ticketRes.ok) {
         const stored = await ticketRes.json()
         setTickets(stored)
