@@ -212,12 +212,79 @@ async function checkEmails() {
     isCheckingEmails = false;
 }
 
-// Run immediately and then conditionally via setInterval loop
-console.log('Starting IMAP listener loop...');
-checkEmails();
+// Helper to call OpenAI gateway for agent work
+async function executeAgentWork(agentId, ticket) {
+    const rolePrompts = {
+        'trace': 'You are conducting Market Research. Provide a competitor landscape analysis.',
+        'analyst': 'You are analyzing research data. Provide insights and identifying gaps.',
+        'strategist': 'You are a Content Strategist. Provide a roadmap and unique angles.',
+        'writer': 'You are a Content Writer. Draft high-quality copy in professional brand voice.',
+        'auditor': 'You are a Quality Auditor. Review work for errors and alignment.',
+        'jarvis': 'You are the Orchestrator. Coordinate final results and brief the user.'
+    };
+    const basePrompt = rolePrompts[ticket.assigneeRole] || 'Complete the assigned task effectively.';
+    const fullPrompt = `${basePrompt}\n\nTask: ${ticket.title}\nDescription: ${ticket.description}`;
 
-// Poll every 60 seconds
-setInterval(checkEmails, 60000);
+    try {
+        const completion = await openai.chat.completions.create({
+            model: 'kimi2.5',
+            messages: [
+                { role: 'system', content: `You are an AI Agent assigned to a professional task. Be thorough and actionable.` },
+                { role: 'user', content: fullPrompt }
+            ],
+            temperature: 0.3,
+        });
+        return { success: true, content: completion.choices[0]?.message?.content || '' };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+}
+
+// Background job to execute "todo" tasks autonomously
+async function runAgentWork() {
+    const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
+    if (!fs.existsSync(storePath)) return;
+
+    try {
+        const store = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+        let modified = false;
+
+        for (const id in store) {
+            const ticket = store[id];
+            // Only pick up 'todo' tickets that are truly idle and have an assignee
+            if (ticket.status === 'todo' && ticket.workState === 'idle' && ticket.assigneeRole) {
+                console.log(`[Autonomy] Starting work on ticket "${ticket.title}" for agent "${ticket.assigneeRole}"...`);
+                
+                // Mark as working
+                ticket.workState = 'working';
+                ticket.status = 'in-progress';
+                ticket.workStartedAt = Date.now();
+                fs.writeFileSync(storePath, JSON.stringify(store, null, 2));
+
+                const result = await executeAgentWork(ticket.assigneeId, ticket);
+
+                if (result.success) {
+                    ticket.workState = 'done';
+                    ticket.status = 'done'; // In autonomous mode, we skip "review" and go straight to done
+                    ticket.workResult = result.content;
+                } else {
+                    ticket.workState = 'failed';
+                    ticket.workError = result.error;
+                }
+                
+                ticket.updatedAt = Date.now();
+                modified = true;
+                console.log(`[Autonomy] Ticket "${ticket.title}" ${result.success ? 'completed' : 'failed'}.`);
+            }
+        }
+
+        if (modified) {
+            fs.writeFileSync(storePath, JSON.stringify(store, null, 2));
+        }
+    } catch (e) {
+        console.error('[Autonomy] Task execution error:', e);
+    }
+}
 
 // Background job to check for completed tasks and reply
 async function checkCompletedProjects() {
@@ -228,7 +295,6 @@ async function checkCompletedProjects() {
         const inboxData = JSON.parse(fs.readFileSync(inboxPath, 'utf-8'));
         let modified = false;
 
-        // Path should match app/api/kanban/route.ts
         const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
         let currentTickets = {};
         if (fs.existsSync(storePath)) {
@@ -238,42 +304,32 @@ async function checkCompletedProjects() {
         for (let i = 0; i < inboxData.length; i++) {
             const project = inboxData[i];
 
-            // Only care about in-progress projects
-            if (project.status === 'in-progress') {
-                // Find all tickets belonging to this project in the store
+            if (project.status === 'in-progress' || project.status === 'pending') {
                 const projectTickets = Object.values(currentTickets).filter(t => 
                     t.description.includes(`Project Context: ${project.subject}`) || 
                     t.title.includes(project.subject)
                 );
 
-                if (projectTickets.length === 0) continue; // Not started yet
+                if (projectTickets.length === 0) continue;
 
                 const allFinished = projectTickets.every(t => t.status === 'done' || t.status === 'failed');
 
                 if (allFinished) {
-                    console.log(`Project ${project.id} ("${project.subject}") is fully completed! Preparing final delivery email to ${project.from}...`);
+                    console.log(`[Autonomy] Project ${project.id} finished! Sending email...`);
 
-                    let detailedReport = `Hello,\n\nYour requested project "${project.subject}" has been successfully completed by the AI Agent Team.\n\n`;
+                    let detailedReport = `Hello,\n\nYour requested project "${project.subject}" has been completed.\n\n`;
                     detailedReport += `--------------------------------------------------\n`;
-                    detailedReport += `EXECUTIVE SUMMARY OF WORK COMPLETED:\n`;
+                    detailedReport += `EXECUTIVE SUMMARY:\n`;
                     detailedReport += `--------------------------------------------------\n\n`;
 
                     projectTickets.forEach(ticket => {
-                        detailedReport += `[Agent: ${ticket.assigneeId || 'System'}] - TASK: ${ticket.title}\n`;
-                        if (ticket.workResult) {
-                            detailedReport += `Outcome:\n${ticket.workResult}\n`;
-                        } else if (ticket.workError) {
-                            detailedReport += `Note: Encountered an issue: ${ticket.workError}\n`;
-                        } else {
-                            detailedReport += `Outcome: Successfully verified.\n`;
-                        }
-                        detailedReport += `\n`;
+                        detailedReport += `[Agent: ${ticket.assigneeRole}] - TASK: ${ticket.title}\n`;
+                        detailedReport += `Result:\n${ticket.workResult || ticket.workError || 'Verified'}\n\n`;
                     });
 
                     detailedReport += `--------------------------------------------------\n`;
                     detailedReport += `Best Regards,\nYour Autonomous Team @ TBS Marketing\n`;
 
-                    // Send the final result email back!
                     await mailer.sendMail({
                         from: '"Clawport Bot at TBS" <agent@tbs-marketing.com>',
                         to: project.from,
@@ -281,9 +337,6 @@ async function checkCompletedProjects() {
                         text: detailedReport
                     });
 
-                    console.log(`Final delivery email sent to ${project.from} for Project ${project.id}.`);
-
-                    // Mark project as totally complete in our tracking file
                     project.status = 'complete';
                     modified = true;
                 }
@@ -293,11 +346,18 @@ async function checkCompletedProjects() {
         if (modified) {
             fs.writeFileSync(inboxPath, JSON.stringify(inboxData, null, 2));
         }
-
     } catch (e) {
-        console.error('Autonomous check error:', e);
+        console.error('[Autonomy] Completion check error:', e);
     }
 }
 
-// Check for completed projects every 60 seconds
-setInterval(checkCompletedProjects, 60000);
+// Main execution loop
+async function mainLoop() {
+    await checkEmails();
+    await runAgentWork();
+    await checkCompletedProjects();
+}
+
+console.log('Starting Autonomous Agent loop...');
+mainLoop();
+setInterval(mainLoop, 30000); // 30 second cycle

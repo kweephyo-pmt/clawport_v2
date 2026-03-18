@@ -6,29 +6,51 @@ import { generateId } from '../id'
 /* ── Role-specific work prompts ──────────────────────── */
 
 const ROLE_PROMPTS: Record<TeamRole, string> = {
-  'lead-dev': `You are working this ticket as the Lead Dev. Provide:
-1. Technical breakdown of the work needed
-2. Implementation plan with clear steps
-3. Key technical decisions or trade-offs
-4. Dependencies or blockers to flag
-
-Be specific and actionable. Reference concrete files, APIs, or patterns where relevant.`,
+  'lead-dev': `You are working this ticket as the Lead Dev in the engineering team. Provide:
+1. Technical breakdown of the work needed.
+2. Implementation plan with clear steps.
+3. Key technical decisions or trade-offs.
+4. Dependencies or blockers to flag.`,
 
   'ux-ui': `You are working this ticket as the UX/UI Lead. Provide:
-1. Design review and recommendations
-2. User flow walkthrough
-3. Accessibility considerations (WCAG)
-4. Visual/interaction suggestions
-
-Focus on the user experience. Call out any usability concerns or improvements.`,
+1. Design review and recommendations.
+2. User flow walkthrough.
+3. Visual/interaction suggestions focused on premium feel.`,
 
   'qa': `You are working this ticket as QA. Provide:
-1. Test scenarios (happy path + edge cases)
-2. Acceptance criteria checklist
-3. Potential regression areas
-4. Edge cases and boundary conditions to verify
+1. Test scenarios (happy path + edge cases).
+2. Acceptance criteria checklist.
+3. Potential regression areas.`,
 
-Be thorough. Think about what could break and how to verify it works.`,
+  'trace': `You are working this ticket as TRACE (Market Research Agent). Provide:
+1. Competitive landscape analysis for the requested period.
+2. Top 3 competitor updates or news.
+3. Pricing or feature benchmarks found in recent data.`,
+
+  'analyst': `You are working this ticket as ANALYST (SEO & Data Analyst). Provide:
+1. Data-driven insights from the provided research.
+2. Strategic keyword or market-gap identifying.
+3. Performance metrics interpretation.`,
+
+  'strategist': `You are working this ticket as STRATEGIST. Provide:
+1. A clear campaign or content strategy outline.
+2. Unique selling angles based on current market trends.
+3. Step-by-step roadmap for the creative team.`,
+
+  'writer': `You are working this ticket as WRITER. Provide:
+1. High-quality draft content (Email, Post, or Report) in the brand voice.
+2. Engaging hooks and call-to-actions.
+3. Structured layout ready for publication.`,
+
+  'auditor': `You are working this ticket as AUDITOR (Quality Assurance). Provide:
+1. Proofreading and brand-alignment check.
+2. Verification of all facts/dates against original request.
+3. Final approval or specific correction notes.`,
+
+  'jarvis': `You are working this ticket as JARVIS (Orchestrator). Provide:
+1. Coordination plan for the rest of the team.
+2. Summary of current project status.
+3. Executive briefing for the stakeholders.`,
 }
 
 const FALLBACK_PROMPT = `You are working this ticket. Provide:
@@ -87,6 +109,7 @@ export async function executeWork(
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
       body: JSON.stringify({
+        model: 'kimi2.5', // Fallback model for API route
         messages: [{ role: 'user', content: prompt }],
         ticket: {
           title: ticket.title,
