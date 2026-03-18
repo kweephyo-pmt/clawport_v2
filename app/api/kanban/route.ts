@@ -4,10 +4,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { requireEnv } from '@/lib/env'
 
+import { homedir } from 'node:os'
+
 function getStoreFilePath() {
-    const workspace = requireEnv('WORKSPACE_PATH')
-    // We store it one level up from the main workspace to keep it persistent across agent runs
-    return path.join(workspace, '..', '..', 'clawport-kanban', 'store.json')
+    // Both on Mac and VPS, we want to store it in ~/.openclaw/clawport-kanban/store.json
+    return path.join(homedir(), '.openclaw', 'clawport-kanban', 'store.json');
 }
 
 function ensureDir() {

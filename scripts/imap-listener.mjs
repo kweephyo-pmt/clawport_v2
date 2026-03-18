@@ -55,6 +55,11 @@ function loadEnvLocal() {
 loadEnvLocal();
 
 const WORKSPACE_PATH = process.env.WORKSPACE_PATH || path.join(homedir(), '.openclaw', 'agents', 'main', 'workspace');
+
+function getStoreFilePath() {
+    // Both on Mac and VPS, we want to store it in ~/.openclaw/clawport-kanban/store.json
+    return path.join(homedir(), '.openclaw', 'clawport-kanban', 'store.json');
+}
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || '18789';
 
@@ -244,7 +249,7 @@ async function executeAgentWork(agentId, ticket) {
 
 // Background job to execute "todo" tasks autonomously
 async function runAgentWork() {
-    const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
+    const storePath = getStoreFilePath();
     if (!fs.existsSync(storePath)) return;
 
     try {
@@ -297,7 +302,7 @@ async function checkCompletedProjects() {
         const inboxData = JSON.parse(fs.readFileSync(inboxPath, 'utf-8'));
         let modified = false;
 
-        const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
+        const storePath = getStoreFilePath();
         let currentTickets = {};
         if (fs.existsSync(storePath)) {
             currentTickets = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
