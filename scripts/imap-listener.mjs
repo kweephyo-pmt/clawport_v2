@@ -146,7 +146,7 @@ IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
         fs.writeFileSync(inboxPath, JSON.stringify(inbox, null, 2));
 
         // 2. CREATE TICKETS DIRECTLY IN KANBAN STORE
-        const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
+        const storePath = path.join(pkgRoot, 'data', 'kanban-store.json');
         const storeDir = path.dirname(storePath);
         if (!fs.existsSync(storeDir)) {
             fs.mkdirSync(storeDir, { recursive: true });
@@ -282,7 +282,7 @@ async function executeAgentWork(agentId, ticket) {
 
 // Background job to execute "todo" tasks autonomously
 async function runAgentWork() {
-    const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
+    const storePath = path.join(pkgRoot, 'data', 'kanban-store.json');
     if (!fs.existsSync(storePath)) return;
 
     try {
@@ -335,7 +335,7 @@ async function checkCompletedProjects() {
         const inboxData = JSON.parse(fs.readFileSync(inboxPath, 'utf-8'));
         let modified = false;
 
-        const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
+        const storePath = path.join(pkgRoot, 'data', 'kanban-store.json');
         let currentTickets = {};
         if (fs.existsSync(storePath)) {
             try { currentTickets = JSON.parse(fs.readFileSync(storePath, 'utf-8')); } catch (e) {}
