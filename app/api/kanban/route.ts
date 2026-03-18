@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
-import { homedir } from 'node:os' // Import homedir directly
+import { homedir } from 'node:os'
 import { requireEnv } from '@/lib/env'
 
 function getStoreFilePath() {
-    // Explicitly use the user's home directory to avoid permission issues on VPS
-    // 2. CREATE TICKETS DIRECTLY IN KANBAN STORE
-    return path.join(homedir(), 'clawport-kanban', 'store.json')
+    return path.join(process.cwd(), 'data', 'kanban-store.json')
 }
 
 function ensureDir() {
