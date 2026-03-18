@@ -57,9 +57,9 @@ export function useAgentWork({ tickets, onUpdateTicket }: UseAgentWorkOptions) {
       const prompt = getWorkPrompt(ticket)
       persistWorkChat(id, prompt, result.content)
 
-      // Move to review with result
+      // Move to done with result
       onUpdateTicket(id, {
-        status: 'review' as TicketStatus,
+        status: 'done' as TicketStatus,
         workState: 'done',
         workResult: result.content,
       })
