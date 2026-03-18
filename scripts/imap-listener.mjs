@@ -56,6 +56,7 @@ loadEnvLocal();
 
 const WORKSPACE_PATH = process.env.WORKSPACE_PATH || path.join(homedir(), '.openclaw', 'agents', 'main', 'workspace');
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || '18789';
 const GATEWAY_HOST = process.env.OPENCLAW_GATEWAY_HOST || 'localhost';
 const openai = new OpenAI({
     baseURL: `http://${GATEWAY_HOST}:${GATEWAY_PORT}/v1`,
