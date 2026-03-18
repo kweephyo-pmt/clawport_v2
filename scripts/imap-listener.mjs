@@ -331,7 +331,8 @@ async function checkCompletedProjects() {
                     detailedReport += `Best Regards,\nYour Autonomous Team @ TBS Marketing\n`;
 
                     await mailer.sendMail({
-                        from: '"Clawport Bot at TBS" <agent@tbs-marketing.com>',
+                        from: '"TBS Marketing Intelligence" <agent@tbs-marketing.com>',
+                        replyTo: 'agent@tbs-marketing.com',
                         to: project.from,
                         subject: `FINAL DELIVERY: ${project.subject}`,
                         text: detailedReport
