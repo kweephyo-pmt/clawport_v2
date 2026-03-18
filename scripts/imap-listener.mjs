@@ -442,13 +442,18 @@ async function checkCompletedProjects() {
     }
 }
 
-// Main execution loop
+// Main execution loop with Overlap Protection
 async function mainLoop() {
-    await checkEmails();
-    await runAgentWork();
-    await checkCompletedProjects();
+    try {
+        await checkEmails();
+        await runAgentWork();
+        await checkCompletedProjects();
+    } catch (e) {
+        console.error('[MainLoop] Error:', e);
+    }
+    // Schedule next run only AFTER current one finishes
+    setTimeout(mainLoop, 30000); 
 }
 
-console.log('Starting Autonomous Agent loop...');
+console.log('Starting Autonomous Agent loop (Safety v2)...');
 mainLoop();
-setInterval(mainLoop, 30000);
