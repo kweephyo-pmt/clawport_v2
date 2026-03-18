@@ -90,23 +90,23 @@ Body:
 ${textBody}
 
 Your goal is to break this request into a high-quality Project defined by sub-tasks.
+Each task must be assigned to one of our specialized agents:
+- "trace": For market research, data gathering, or competitive analysis.
+- "analyst": For analyzing data, SEO metrics, or research results.
+- "strategist": For creating clear plans, outlines, or strategic angles.
+- "writer": For drafting reports, email content, or LinkedIn posts.
+- "auditor": For quality checks, proofreading, and final verification.
+- "jarvis": For general orchestration or complex multi-step coordination.
 
 INSTRUCTION: 
-1. COMPLEX REQUESTS: If it's a full research project, create 4-6 tasks for various agents (trace, analyst, etc.).
-2. SIMPLE REQUESTS: If the user asks for a "quick insight", "summary", or "1-paragraph", DO NOT over-engineer it. Create one single task for the "writer" or "jarvis" agent only.
+If the subject starts with "create a report project" or similar, prioritize the specific details in the subject (like dates "${subject.match(/\d+.*-.*\d+/)?.[0] || ''}") to guide the agents. The body may contain a forwarded report for reference/context.
 
-Each task must be assigned to:
-- "trace": For market research or competitive analysis.
-- "analyst": For analyzing metrics or research.
-- "strategist": For outlines or creative angles.
-- "writer": For drafting copy or reports.
-- "auditor": For quality checks.
-- "jarvis": For orchestration or synthesis.
+CRITICAL RULE: The user's email may ask you to "email the results back". DO NOT create any task that instructs an agent to send an email, use terminal email clients (like himalaya), or deliver the report externally. Our background system will automatically email the final results once all tasks are marked "Done". The final Jarvis task should ONLY involve synthesizing and formatting the final report text.
 
 Output a valid JSON array of tasks where each task has:
 - "title": A short, clear task title.
 - "description": Extremely detailed step-by-step instructions for the agent.
-- "assigneeRole": Must be one of the IDs listed above.
+- "assigneeRole": Must be one of the IDs listed above (trace, analyst, strategist, writer, auditor, jarvis).
 - "priority": "low", "medium", or "high".
 
 IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
