@@ -312,7 +312,7 @@ async function checkCompletedProjects() {
 
                 if (projectTickets.length === 0) continue;
 
-                const allFinished = projectTickets.every(t => t.status === 'done' || t.status === 'failed');
+                const allFinished = projectTickets.every(t => t.status === 'done' || t.workState === 'failed');
 
                 if (allFinished) {
                     console.log(`[Autonomy] Project ${project.id} finished! Sending email...`);

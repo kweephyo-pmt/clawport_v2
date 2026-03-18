@@ -81,7 +81,7 @@ interface WorkResult {
   error?: string
 }
 
-const WORK_TIMEOUT_MS = 120_000 // 2 minutes
+const WORK_TIMEOUT_MS = 300_000 // 5 minutes
 
 export async function executeWork(
   agentId: string,
