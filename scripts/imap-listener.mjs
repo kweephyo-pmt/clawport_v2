@@ -97,6 +97,10 @@ Each task must be assigned to one of our specialized agents:
 INSTRUCTION: 
 If the subject starts with "create a report project" or similar, prioritize the specific details in the subject (like dates "${subject.match(/\d+.*-.*\d+/)?.[0] || ''}") to guide the agents. The body may contain a forwarded report for reference/context.
 
+IMPORTANT: 
+- DO NOT create a task for "Sending the final email" or "Reporting results". The system will automatically compile and email the final results once all tasks are done.
+- Focus ONLY on the research, analysis, and content creation steps.
+
 Output a valid JSON array of tasks where each task has:
 - "title": A short, clear task title.
 - "description": Extremely detailed step-by-step instructions for the agent.
@@ -292,7 +296,7 @@ async function runAgentWork() {
         let modified = false;
 
         // --- NEW: Cleanup stale 'working' tickets ---
-        const STALE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+        const STALE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
         for (const id in store) {
             const ticket = store[id];
             if (ticket.workState === 'working' && ticket.workStartedAt) {

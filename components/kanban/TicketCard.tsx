@@ -252,9 +252,15 @@ export function TicketCard({ ticket, agent, onClick, isWorking }: TicketCardProp
             background: 'color-mix(in srgb, var(--system-red) 10%, transparent)',
             borderRadius: 'var(--radius-sm)',
             padding: '1px var(--space-2)',
+            wordBreak: 'break-word'
           }}
         >
           Failed
+          {ticket.workError && (
+             <div style={{ fontWeight: 400, opacity: 0.8, marginTop: 2, fontSize: '0.7rem', maxHeight: '3.6em', overflow: 'hidden' }}>
+                {ticket.workError}
+             </div>
+          )}
         </div>
       )}
     </div>
