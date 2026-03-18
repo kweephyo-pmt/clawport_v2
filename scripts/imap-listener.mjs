@@ -138,13 +138,48 @@ IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
             body: textBody,
             tasks: tasks.map(t => ({ ...t, id: generateId(), status: 'todo' })),
             receivedAt: Date.now(),
-            status: 'pending' // pending -> in-progress -> complete
+            status: 'in-progress'
         };
 
+        // 1. Save to inbox tracker
         inbox.push(newProject);
         fs.writeFileSync(inboxPath, JSON.stringify(inbox, null, 2));
 
-        console.log(`Saved new project ${projectId} with ${tasks.length} tasks.`);
+        // 2. CREATE TICKETS DIRECTLY IN KANBAN STORE
+        const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
+        let store = {};
+        if (fs.existsSync(storePath)) {
+            try { store = JSON.parse(fs.readFileSync(storePath, 'utf-8')); } catch (e) {}
+        }
+
+        // We need the agents to find IDs
+        const agentsPath = path.join(pkgRoot, 'lib', 'agents.json');
+        let agents = [];
+        if (fs.existsSync(agentsPath)) {
+            try { agents = JSON.parse(fs.readFileSync(agentsPath, 'utf-8')); } catch (e) {}
+        }
+
+        tasks.forEach(t => {
+            const ticketId = generateId();
+            // Match role to agent ID or fallback to 'jarvis'
+            const targetAgent = agents.find(a => a.id === t.assigneeRole) || agents.find(a => a.id === 'jarvis') || { id: 'jarvis' };
+            
+            store[ticketId] = {
+                id: ticketId,
+                title: t.title,
+                description: `${t.description}\n\n---\nProject Context: ${subject}\nSource: ${from}`,
+                priority: t.priority || 'medium',
+                status: 'todo',
+                assigneeId: targetAgent.id,
+                assigneeRole: t.assigneeRole,
+                workState: 'idle',
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            };
+        });
+
+        fs.writeFileSync(storePath, JSON.stringify(store, null, 2));
+        console.log(`[Autonomous] Created ${tasks.length} tickets in store for Project ${projectId}. Bot will start work immediately.`);
     } catch (e) {
         console.error('Error parsing or saving email:', e.message);
     }
@@ -286,7 +321,7 @@ async function runAgentWork() {
     }
 }
 
-// Background job to check for completed tasks and reply
+// Background job to check for completed tasks and reply with a PROFESSIONAL HTML TEMPLATE
 async function checkCompletedProjects() {
     const inboxPath = getInboxFilePath();
     if (!fs.existsSync(inboxPath)) return;
@@ -298,7 +333,7 @@ async function checkCompletedProjects() {
         const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
         let currentTickets = {};
         if (fs.existsSync(storePath)) {
-            currentTickets = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+            try { currentTickets = JSON.parse(fs.readFileSync(storePath, 'utf-8')); } catch (e) {}
         }
 
         for (let i = 0; i < inboxData.length; i++) {
@@ -315,28 +350,62 @@ async function checkCompletedProjects() {
                 const allFinished = projectTickets.every(t => t.status === 'done' || t.status === 'failed');
 
                 if (allFinished) {
-                    console.log(`[Autonomy] Project ${project.id} finished! Sending email...`);
+                    console.log(`[Autonomy] Project ${project.id} finished! Preparing professional HTML delivery...`);
 
-                    let detailedReport = `Hello,\n\nYour requested project "${project.subject}" has been completed.\n\n`;
-                    detailedReport += `--------------------------------------------------\n`;
-                    detailedReport += `EXECUTIVE SUMMARY:\n`;
-                    detailedReport += `--------------------------------------------------\n\n`;
-
+                    let taskResultsHtml = '';
                     projectTickets.forEach(ticket => {
-                        detailedReport += `[Agent: ${ticket.assigneeRole}] - TASK: ${ticket.title}\n`;
-                        detailedReport += `Result:\n${ticket.workResult || ticket.workError || 'Verified'}\n\n`;
+                        const content = (ticket.workResult || ticket.workError || 'Verified').replace(/\n/g, '<br>');
+                        taskResultsHtml += `
+                            <div style="margin-bottom: 25px;">
+                                <h3 style="color: #34495e; margin-bottom: 5px;">${ticket.title}</h3>
+                                <p style="font-size: 12px; color: #7f8c8d; margin: 0;">Agent: <strong>${ticket.assigneeRole?.toUpperCase() || 'SYSTEM'}</strong></p>
+                                <div style="margin-top: 10px; padding-left: 15px; border-left: 2px solid #3498db; color: #333;">
+                                    ${content}
+                                </div>
+                            </div>
+                        `;
                     });
 
-                    detailedReport += `--------------------------------------------------\n`;
-                    detailedReport += `Best Regards,\nYour Autonomous Team @ TBS Marketing\n`;
+                    const htmlTemplate = `
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee;">
+    <p>Hi there,</p>
+    <p>Your requested intelligence brief is ready. Our AI agents have completed the following analysis for your project.</p>
+    
+    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+
+    <h2 style="color: #2c3e50; margin-bottom: 10px;">${project.subject}</h2>
+    <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: '2026' })} | <strong>TBS Marketing Intelligence Delivery</strong></p>
+
+    <div style="margin-top: 30px;">
+        ${taskResultsHtml}
+    </div>
+
+    <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+
+    <h3 style="color: #34495e;">Strategic Takeaways</h3>
+    <ul style="color: #444;">
+        <li><strong>Autonomously Generated:</strong> This report was compiled and verified by the TBS Market Intelligence Bot.</li>
+        <li><strong>Platform Context:</strong> Insights are tailored for AEO and Knowledge Retrieval systems.</li>
+    </ul>
+
+    <p style="margin-top: 30px;">Best regards,<br>
+    <strong>TBS Marketing Team</strong><br>
+    SEO / AEO / GEO for the AI Search Era<br>
+    <a href="https://tbs-marketing.com" style="color: #3498db; text-decoration: none;">tbs-marketing.com</a></p>
+</body>
+</html>
+                    `;
 
                     await mailer.sendMail({
-                        from: '"Clawport Bot at TBS" <agent@tbs-marketing.com>',
+                        from: '"TBS Marketing Intelligence" <agent@tbs-marketing.com>',
                         to: project.from,
+                        replyTo: 'leo.tbsmarketing@gmail.com',
                         subject: `FINAL DELIVERY: ${project.subject}`,
-                        text: detailedReport
+                        html: htmlTemplate
                     });
 
+                    console.log(`[Autonomy] Final HTML delivery email sent for Project ${project.id}.`);
                     project.status = 'complete';
                     modified = true;
                 }
@@ -360,4 +429,4 @@ async function mainLoop() {
 
 console.log('Starting Autonomous Agent loop...');
 mainLoop();
-setInterval(mainLoop, 30000); // 30 second cycle
+setInterval(mainLoop, 30000);
