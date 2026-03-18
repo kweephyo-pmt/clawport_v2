@@ -4,7 +4,24 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import type { Agent } from '@/lib/types'
 import type { KanbanTicket, TicketStatus, TicketPriority } from '@/lib/kanban/types'
-import { PRIORITY_COLORS, ROLE_LABELS, COLUMNS } from '@/lib/kanban/types'
+import { PRIORITY_COLORS, COLUMNS } from '@/lib/kanban/types'
+
+function getRoleLabel(role: string | null): string {
+  if (!role) return ''
+  const common: Record<string, string> = {
+    'lead-dev': 'Lead Dev',
+    'ux-ui': 'UX/UI Lead',
+    'qa': 'QA',
+    'trace': 'Trace',
+    'analyst': 'Analyst',
+    'strategist': 'Strategist',
+    'writer': 'Writer',
+    'auditor': 'Auditor',
+    'jarvis': 'Jarvis'
+  }
+  return common[role] || role.charAt(0).toUpperCase() + role.slice(1)
+}
+
 import { AgentAvatar } from '@/components/AgentAvatar'
 import { generateId } from '@/lib/id'
 
@@ -486,7 +503,7 @@ export function TicketDetailPanel({
                 <span>{agent.name}</span>
                 {ticket.assigneeRole && (
                   <span style={{ color: 'var(--text-tertiary)' }}>
-                    ({ROLE_LABELS[ticket.assigneeRole]})
+                    ({getRoleLabel(ticket.assigneeRole)})
                   </span>
                 )}
               </div>

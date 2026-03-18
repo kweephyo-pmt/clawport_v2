@@ -76,19 +76,33 @@ async function processEmail(subject, textBody, from) {
 
     console.log(`Processing email from ${from}: ${subject}`);
 
-    const prompt = `You are the lead project manager. You received an email from ${from} with the subject: "${subject}"
-    
+    const prompt = `You are a Senior Project Manager for an AI Agent Team at TBS Marketing.
+You received a task request via email.
+
+Subject: "${subject}"
+Sender: ${from}
 Body:
 ${textBody}
 
-Please break this down into actionable sub-tasks for a software development/agent team. 
-Output a valid JSON array of tasks where each task has:
-- "title": A short, clear task title
-- "description": Detailed instructions
-- "assigneeRole": Must be exactly one of: "lead-dev", "ux-ui", or "qa"
-- "priority": Must be exactly one of: "low", "medium", or "high"
+Your goal is to break this request into a high-quality Project defined by sub-tasks.
+Each task must be assigned to one of our specialized agents:
+- "trace": For market research, data gathering, or competitive analysis.
+- "analyst": For analyzing data, SEO metrics, or research results.
+- "strategist": For creating clear plans, outlines, or strategic angles.
+- "writer": For drafting reports, email content, or LinkedIn posts.
+- "auditor": For quality checks, proofreading, and final verification.
+- "jarvis": For general orchestration or complex multi-step coordination.
 
-IMPORTANT: ONLY output valid JSON. Nothing else. No markdown wrapping. Just the JSON array.`;
+INSTRUCTION: 
+If the subject starts with "create a report project" or similar, prioritize the specific details in the subject (like dates "${subject.match(/\d+.*-.*\d+/)?.[0] || ''}") to guide the agents. The body may contain a forwarded report for reference/context.
+
+Output a valid JSON array of tasks where each task has:
+- "title": A short, clear task title.
+- "description": Extremely detailed step-by-step instructions for the agent.
+- "assigneeRole": Must be one of the IDs listed above (trace, analyst, strategist, writer, auditor, jarvis).
+- "priority": "low", "medium", or "high".
+
+IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
 
     try {
         const completion = await openai.chat.completions.create({
@@ -211,49 +225,65 @@ async function checkCompletedProjects() {
     if (!fs.existsSync(inboxPath)) return;
 
     try {
-        const inbox = JSON.parse(fs.readFileSync(inboxPath, 'utf-8'));
+        const inboxData = JSON.parse(fs.readFileSync(inboxPath, 'utf-8'));
         let modified = false;
 
-        for (let i = 0; i < inbox.length; i++) {
-            const project = inbox[i];
+        // Path should match app/api/kanban/route.ts
+        const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
+        let currentTickets = {};
+        if (fs.existsSync(storePath)) {
+            currentTickets = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+        }
 
-            // Only care about in-progress projects (meaning UI has picked them up and agents are working)
+        for (let i = 0; i < inboxData.length; i++) {
+            const project = inboxData[i];
+
+            // Only care about in-progress projects
             if (project.status === 'in-progress') {
-                // If every single task generated for this project is marked as "done" or "review"
-                const allFinished = project.tasks.every(t => t.status === 'done' || t.status === 'review');
+                // Find all tickets belonging to this project in the store
+                const projectTickets = Object.values(currentTickets).filter(t => 
+                    t.description.includes(`Project Context: ${project.subject}`) || 
+                    t.title.includes(project.subject)
+                );
+
+                if (projectTickets.length === 0) continue; // Not started yet
+
+                const allFinished = projectTickets.every(t => t.status === 'done' || t.status === 'failed');
 
                 if (allFinished) {
-                    console.log(`Project ${project.id} is fully completed! Preparing reply to ${project.from}...`);
+                    console.log(`Project ${project.id} ("${project.subject}") is fully completed! Preparing final delivery email to ${project.from}...`);
 
-                    // Retrieve actual ticket work results from the kanban store to compile the email
-                    const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json'); // approximate
-                    let detailedReport = '';
+                    let detailedReport = `Hello,\n\nYour requested project "${project.subject}" has been successfully completed by the AI Agent Team.\n\n`;
+                    detailedReport += `--------------------------------------------------\n`;
+                    detailedReport += `EXECUTIVE SUMMARY OF WORK COMPLETED:\n`;
+                    detailedReport += `--------------------------------------------------\n\n`;
 
-                    try {
-                        let finalMessage = `Hello,\n\nYour task "${project.subject}" has been successfully completed by the Agent Team.\n\nHere is a summary of the outcomes:\n\n`;
+                    projectTickets.forEach(ticket => {
+                        detailedReport += `[Agent: ${ticket.assigneeId || 'System'}] - TASK: ${ticket.title}\n`;
+                        if (ticket.workResult) {
+                            detailedReport += `Outcome:\n${ticket.workResult}\n`;
+                        } else if (ticket.workError) {
+                            detailedReport += `Note: Encountered an issue: ${ticket.workError}\n`;
+                        } else {
+                            detailedReport += `Outcome: Successfully verified.\n`;
+                        }
+                        detailedReport += `\n`;
+                    });
 
-                        project.tasks.forEach(task => {
-                            finalMessage += `[${task.title}] - Status: Completed\n`;
-                        });
+                    detailedReport += `--------------------------------------------------\n`;
+                    detailedReport += `Best Regards,\nYour Autonomous Team @ TBS Marketing\n`;
 
-                        finalMessage += '\nBest,\nYour Clawport AI Team';
-                        detailedReport = finalMessage;
-
-                    } catch (e) {
-                        detailedReport = `Hello, your requested work for "${project.subject}" has successfully finished.`;
-                    }
-
-                    // Send the email via SMTP!
+                    // Send the final result email back!
                     await mailer.sendMail({
-                        from: '"Clawport Agents" <agent@tbs-marketing.com>',
+                        from: '"Clawport Bot at TBS" <agent@tbs-marketing.com>',
                         to: project.from,
-                        subject: `Re: ${project.subject} (Completed)`,
+                        subject: `FINAL DELIVERY: ${project.subject}`,
                         text: detailedReport
                     });
 
-                    console.log(`Reply sent for Project ${project.id}`);
+                    console.log(`Final delivery email sent to ${project.from} for Project ${project.id}.`);
 
-                    // Mark project as totally complete so we don't email them again
+                    // Mark project as totally complete in our tracking file
                     project.status = 'complete';
                     modified = true;
                 }
@@ -261,13 +291,13 @@ async function checkCompletedProjects() {
         }
 
         if (modified) {
-            fs.writeFileSync(inboxPath, JSON.stringify(inbox, null, 2));
+            fs.writeFileSync(inboxPath, JSON.stringify(inboxData, null, 2));
         }
 
     } catch (e) {
-        console.error('Error checking completed projects', e);
+        console.error('Autonomous check error:', e);
     }
 }
 
-// Check for completed projects every 2 minutes
-setInterval(checkCompletedProjects, 120000);
+// Check for completed projects every 60 seconds
+setInterval(checkCompletedProjects, 60000);

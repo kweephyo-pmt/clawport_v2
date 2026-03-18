@@ -30,23 +30,28 @@ export default function KanbanPage() {
   const [selectedTicket, setSelectedTicket] = useState<KanbanTicket | null>(null)
   const [filterAgentId, setFilterAgentId] = useState<string | null>(null)
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
 
-    // Load tickets from localStorage
-    const stored = loadTickets()
-    setTickets(stored)
+    try {
+      // 1. Load tickets from Server API
+      const ticketRes = await fetch('/api/kanban')
+      if (ticketRes.ok) {
+        const stored = await ticketRes.json()
+        setTickets(stored)
+      }
 
-    // Load agents from API
-    fetch('/api/agents')
-      .then((r) => {
-        if (!r.ok) throw new Error('Failed to fetch agents')
-        return r.json()
-      })
-      .then((a: Agent[]) => setAgents(a))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
+      // 2. Load agents from API
+      const agentRes = await fetch('/api/agents')
+      if (!agentRes.ok) throw new Error('Failed to fetch agents')
+      const a = await agentRes.json()
+      setAgents(a)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -69,14 +74,17 @@ export default function KanbanPage() {
           let nextTickets = { ...prev }
           for (const p of pendingProjects) {
             p.tasks.forEach((t: any) => {
-              // Assign a random agent to distribute work
-              const agent = agents[Math.floor(Math.random() * agents.length)]
+              // Priority 1: Match assigneeRole to agent ID
+              // Priority 2: Fallback to random agent
+              const targetAgent = agents.find(a => a.id === t.assigneeRole) || 
+                               agents[Math.floor(Math.random() * agents.length)];
+              
               nextTickets = createTicket(nextTickets, {
-                title: `[${p.subject || 'Email'}] ${t.title}`,
-                description: `${t.description}\n\n---\nFrom: ${p.from}\nProject: ${p.subject}\nEmail Content:\n${p.body}`,
+                title: `${t.title}`, // Remove the [Email] prefix for cleaner titles as requested
+                description: `${t.description}\n\n---\nProject Context: ${p.subject}\nOriginal From: ${p.from}`,
                 priority: t.priority || 'medium',
                 status: 'todo',
-                assigneeId: agent?.id || null,
+                assigneeId: targetAgent?.id || null,
                 assigneeRole: t.assigneeRole || null,
                 workState: 'idle'
               })
@@ -100,10 +108,14 @@ export default function KanbanPage() {
     return () => clearInterval(interval)
   }, [loading, agents])
 
-  // Persist tickets whenever they change
+  // Persist tickets whenever they change to Server
   useEffect(() => {
-    if (!loading) {
-      saveTickets(tickets)
+    if (!loading && Object.keys(tickets).length > 0) {
+      fetch('/api/kanban', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(tickets)
+      }).catch(e => console.error('Failed to persist tickets', e))
     }
   }, [tickets, loading])
 

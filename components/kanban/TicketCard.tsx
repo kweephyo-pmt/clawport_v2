@@ -5,8 +5,25 @@ import type { Agent } from '@/lib/types'
 import {
   KanbanTicket,
   PRIORITY_COLORS,
-  ROLE_LABELS,
+  COLUMNS,
 } from '@/lib/kanban/types'
+
+function getRoleLabel(role: string | null): string {
+  if (!role) return ''
+  const common: Record<string, string> = {
+    'lead-dev': 'Lead Dev',
+    'ux-ui': 'UX/UI Lead',
+    'qa': 'QA',
+    'trace': 'Trace',
+    'analyst': 'Analyst',
+    'strategist': 'Strategist',
+    'writer': 'Writer',
+    'auditor': 'Auditor',
+    'jarvis': 'Jarvis'
+  }
+  return common[role] || role.charAt(0).toUpperCase() + role.slice(1)
+}
+
 import { AgentAvatar } from '@/components/AgentAvatar'
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -186,7 +203,7 @@ export function TicketCard({ ticket, agent, onClick, isWorking }: TicketCardProp
               lineHeight: 1.5,
             }}
           >
-            {ROLE_LABELS[ticket.assigneeRole]}
+            {getRoleLabel(ticket.assigneeRole)}
           </span>
         )}
 

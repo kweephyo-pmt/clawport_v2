@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { Plus } from 'lucide-react'
 import type { Agent } from '@/lib/types'
 import type { TicketPriority, TeamRole } from '@/lib/kanban/types'
-import { PRIORITY_COLORS, ROLE_LABELS } from '@/lib/kanban/types'
+import { PRIORITY_COLORS } from '@/lib/kanban/types'
 import { AgentPicker } from '@/components/kanban/AgentPicker'
 import {
   Dialog,
@@ -34,7 +34,24 @@ const PRIORITY_LABELS: Record<TicketPriority, string> = {
   high: 'High',
 }
 
-const ROLES: TeamRole[] = ['lead-dev', 'ux-ui', 'qa']
+const ROLES: TeamRole[] = ['trace', 'strategist', 'writer', 'analyst', 'auditor', 'jarvis', 'lead-dev', 'ux-ui', 'qa']
+
+function getRoleLabel(role: string | null): string {
+  if (!role) return ''
+  const common: Record<string, string> = {
+    'lead-dev': 'Lead Dev',
+    'ux-ui': 'UX/UI Lead',
+    'qa': 'QA',
+    'trace': 'Trace (Research)',
+    'analyst': 'Analyst',
+    'strategist': 'Strategist',
+    'writer': 'Writer',
+    'auditor': 'Auditor',
+    'jarvis': 'Jarvis'
+  }
+  return common[role] || role.charAt(0).toUpperCase() + role.slice(1)
+}
+
 
 const initialState = {
   title: '',
@@ -296,7 +313,7 @@ export function CreateTicketModal({
                         textAlign: 'center',
                       }}
                     >
-                      {ROLE_LABELS[r]}
+                      {getRoleLabel(r)}
                     </button>
                   )
                 })}

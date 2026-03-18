@@ -4,7 +4,7 @@ export type TicketStatus = 'backlog' | 'todo' | 'in-progress' | 'review' | 'done
 
 export type TicketPriority = 'low' | 'medium' | 'high'
 
-export type TeamRole = 'lead-dev' | 'ux-ui' | 'qa'
+export type TeamRole = string
 
 export type WorkState = 'idle' | 'starting' | 'working' | 'done' | 'failed'
 
@@ -15,7 +15,7 @@ export interface KanbanTicket {
   status: TicketStatus
   priority: TicketPriority
   assigneeId: string | null   // agent id from agents.json
-  assigneeRole: TeamRole | null
+  assigneeRole: string | null
   workState: WorkState
   workStartedAt: number | null
   workError: string | null
@@ -41,10 +41,4 @@ export const PRIORITY_COLORS: Record<TicketPriority, string> = {
   low: 'var(--system-green)',
   medium: 'var(--system-orange)',
   high: 'var(--system-red)',
-}
-
-export const ROLE_LABELS: Record<TeamRole, string> = {
-  'lead-dev': 'Lead Dev',
-  'ux-ui': 'UX/UI Lead',
-  'qa': 'QA',
 }
