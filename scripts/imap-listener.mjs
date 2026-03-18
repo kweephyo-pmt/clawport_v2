@@ -397,7 +397,7 @@ async function checkCompletedProjects() {
     <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
 
     <h2 style="color: #2c3e50; margin-bottom: 10px;">${project.subject}</h2>
-    <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: '2026' })} | <strong>TBS Marketing Intelligence Delivery</strong></p>
+    <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} | <strong>TBS Marketing Intelligence Delivery</strong></p>
 
     <div style="margin-top: 30px;">
         ${taskResultsHtml}
