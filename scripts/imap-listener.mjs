@@ -61,6 +61,7 @@ const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || '18789';
 const openai = new OpenAI({
     baseURL: `http://localhost:${GATEWAY_PORT}/v1`,
     apiKey: GATEWAY_TOKEN || 'dummy',
+    timeout: 120000, // 2-minute timeout to prevent hanging
 });
 
 function generateId() {
@@ -276,6 +277,7 @@ async function executeAgentWork(agentId, ticket) {
         });
         return { success: true, content: completion.choices[0]?.message?.content || '' };
     } catch (e) {
+        console.error(`[executeAgentWork] API call failed for agent ${agentId}:`, e.message);
         return { success: false, error: e.message };
     }
 }
@@ -288,6 +290,21 @@ async function runAgentWork() {
     try {
         const store = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
         let modified = false;
+
+        // --- NEW: Cleanup stale 'working' tickets ---
+        const STALE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+        for (const id in store) {
+            const ticket = store[id];
+            if (ticket.workState === 'working' && ticket.workStartedAt) {
+                if (Date.now() - ticket.workStartedAt > STALE_TIMEOUT_MS) {
+                    console.log(`[Autonomy] Resetting stale ticket "${ticket.title}" (stuck for >10m)`);
+                    ticket.workState = 'idle';
+                    ticket.status = 'todo';
+                    ticket.workError = 'Task timed out or worker stalled.';
+                    modified = true;
+                }
+            }
+        }
 
         for (const id in store) {
             const ticket = store[id];
