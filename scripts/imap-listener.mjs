@@ -96,6 +96,8 @@ Each task must be assigned to one of our specialized agents:
 INSTRUCTION: 
 If the subject starts with "create a report project" or similar, prioritize the specific details in the subject (like dates "${subject.match(/\d+.*-.*\d+/)?.[0] || ''}") to guide the agents. The body may contain a forwarded report for reference/context.
 
+CRITICAL RULE: The user's email may ask you to "email the results back". DO NOT create any task that instructs an agent to send an email, use terminal email clients (like himalaya), or deliver the report externally. Our background system will automatically email the final results once all tasks are marked "Done". The final Jarvis task should ONLY involve synthesizing and formatting the final report text.
+
 Output a valid JSON array of tasks where each task has:
 - "title": A short, clear task title.
 - "description": Extremely detailed step-by-step instructions for the agent.
@@ -136,7 +138,7 @@ IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
             subject,
             from,
             body: textBody,
-            tasks: tasks.map(t => ({ ...t, id: generateId(), status: 'todo' })),
+            tasks: tasks.map(t => ({ ...t, id: generateId(), projectId: projectId, status: 'todo' })),
             receivedAt: Date.now(),
             status: 'pending' // pending -> in-progress -> complete
         };
@@ -306,8 +308,9 @@ async function checkCompletedProjects() {
 
             if (project.status === 'in-progress' || project.status === 'pending') {
                 const projectTickets = Object.values(currentTickets).filter(t => 
-                    t.description.includes(`Project Context: ${project.subject}`) || 
-                    t.title.includes(project.subject)
+                    t.projectId === project.id ||
+                    (t.description && t.description.includes(`Project Context: ${project.subject}`)) || 
+                    (t.title && t.title.includes(project.subject))
                 );
 
                 if (projectTickets.length === 0) continue;
