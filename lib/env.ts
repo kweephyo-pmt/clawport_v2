@@ -20,6 +20,5 @@ export function gatewayPort(): number {
 
 /** OpenClaw gateway base URL for the OpenAI-compatible API (e.g. http://localhost:18789/v1). */
 export function gatewayBaseUrl(): string {
-  const host = process.env.OPENCLAW_GATEWAY_HOST || 'localhost'
-  return `http://${host}:${gatewayPort()}/v1`
+  return `http://localhost:${gatewayPort()}/v1`
 }

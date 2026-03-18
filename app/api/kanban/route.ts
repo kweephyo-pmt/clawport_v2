@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
-import { homedir } from 'node:os'
 import { requireEnv } from '@/lib/env'
 
 function getStoreFilePath() {
-    return path.join(process.cwd(), 'data', 'kanban-store.json')
+    const workspace = requireEnv('WORKSPACE_PATH')
+    // We store it one level up from the main workspace to keep it persistent across agent runs
+    return path.join(workspace, '..', '..', 'clawport-kanban', 'store.json')
 }
 
 function ensureDir() {

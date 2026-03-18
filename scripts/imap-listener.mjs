@@ -57,11 +57,10 @@ loadEnvLocal();
 const WORKSPACE_PATH = process.env.WORKSPACE_PATH || path.join(homedir(), '.openclaw', 'agents', 'main', 'workspace');
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || '18789';
-const GATEWAY_HOST = process.env.OPENCLAW_GATEWAY_HOST || 'localhost';
+
 const openai = new OpenAI({
-    baseURL: `http://${GATEWAY_HOST}:${GATEWAY_PORT}/v1`,
+    baseURL: `http://localhost:${GATEWAY_PORT}/v1`,
     apiKey: GATEWAY_TOKEN || 'dummy',
-    timeout: 120000, 
 });
 
 function generateId() {
@@ -96,10 +95,6 @@ Each task must be assigned to one of our specialized agents:
 
 INSTRUCTION: 
 If the subject starts with "create a report project" or similar, prioritize the specific details in the subject (like dates "${subject.match(/\d+.*-.*\d+/)?.[0] || ''}") to guide the agents. The body may contain a forwarded report for reference/context.
-
-IMPORTANT: 
-- DO NOT create a task for "Sending the final email" or "Reporting results". The system will automatically compile and email the final results once all tasks are done.
-- Focus ONLY on the research, analysis, and content creation steps.
 
 Output a valid JSON array of tasks where each task has:
 - "title": A short, clear task title.
@@ -143,53 +138,13 @@ IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
             body: textBody,
             tasks: tasks.map(t => ({ ...t, id: generateId(), status: 'todo' })),
             receivedAt: Date.now(),
-            status: 'in-progress'
+            status: 'pending' // pending -> in-progress -> complete
         };
 
-        // 1. Save to inbox tracker
         inbox.push(newProject);
         fs.writeFileSync(inboxPath, JSON.stringify(inbox, null, 2));
 
-        // 2. CREATE TICKETS DIRECTLY IN KANBAN STORE
-        const storePath = path.join(pkgRoot, 'data', 'kanban-store.json');
-        const storeDir = path.dirname(storePath);
-        if (!fs.existsSync(storeDir)) {
-            fs.mkdirSync(storeDir, { recursive: true });
-        }
-        
-        let store = {};
-        if (fs.existsSync(storePath)) {
-            try { store = JSON.parse(fs.readFileSync(storePath, 'utf-8')); } catch (e) {}
-        }
-
-        // We need the agents to find IDs
-        const agentsPath = path.join(pkgRoot, 'lib', 'agents.json');
-        let agents = [];
-        if (fs.existsSync(agentsPath)) {
-            try { agents = JSON.parse(fs.readFileSync(agentsPath, 'utf-8')); } catch (e) {}
-        }
-
-        tasks.forEach(t => {
-            const ticketId = generateId();
-            // Match role to agent ID or fallback to 'jarvis'
-            const targetAgent = agents.find(a => a.id === t.assigneeRole) || agents.find(a => a.id === 'jarvis') || { id: 'jarvis' };
-            
-            store[ticketId] = {
-                id: ticketId,
-                title: t.title,
-                description: `${t.description}\n\n---\nProject Context: ${subject}\nSource: ${from}`,
-                priority: t.priority || 'medium',
-                status: 'todo',
-                assigneeId: targetAgent.id,
-                assigneeRole: t.assigneeRole,
-                workState: 'idle',
-                createdAt: Date.now(),
-                updatedAt: Date.now()
-            };
-        });
-
-        fs.writeFileSync(storePath, JSON.stringify(store, null, 2));
-        console.log(`[Autonomous] Created ${tasks.length} tickets in store for Project ${projectId}. Bot will start work immediately.`);
+        console.log(`Saved new project ${projectId} with ${tasks.length} tasks.`);
     } catch (e) {
         console.error('Error parsing or saving email:', e.message);
     }
@@ -281,34 +236,18 @@ async function executeAgentWork(agentId, ticket) {
         });
         return { success: true, content: completion.choices[0]?.message?.content || '' };
     } catch (e) {
-        console.error(`[executeAgentWork] API call failed for agent ${agentId}:`, e.message);
         return { success: false, error: e.message };
     }
 }
 
 // Background job to execute "todo" tasks autonomously
 async function runAgentWork() {
-    const storePath = path.join(pkgRoot, 'data', 'kanban-store.json');
+    const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
     if (!fs.existsSync(storePath)) return;
 
     try {
         const store = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
         let modified = false;
-
-        // --- NEW: Cleanup stale 'working' tickets ---
-        const STALE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-        for (const id in store) {
-            const ticket = store[id];
-            if (ticket.workState === 'working' && ticket.workStartedAt) {
-                if (Date.now() - ticket.workStartedAt > STALE_TIMEOUT_MS) {
-                    console.log(`[Autonomy] Resetting stale ticket "${ticket.title}" (stuck for >10m)`);
-                    ticket.workState = 'idle';
-                    ticket.status = 'todo';
-                    ticket.workError = 'Task timed out or worker stalled.';
-                    modified = true;
-                }
-            }
-        }
 
         for (const id in store) {
             const ticket = store[id];
@@ -347,7 +286,7 @@ async function runAgentWork() {
     }
 }
 
-// Background job to check for completed tasks and reply with a PROFESSIONAL HTML TEMPLATE
+// Background job to check for completed tasks and reply
 async function checkCompletedProjects() {
     const inboxPath = getInboxFilePath();
     if (!fs.existsSync(inboxPath)) return;
@@ -356,10 +295,10 @@ async function checkCompletedProjects() {
         const inboxData = JSON.parse(fs.readFileSync(inboxPath, 'utf-8'));
         let modified = false;
 
-        const storePath = path.join(pkgRoot, 'data', 'kanban-store.json');
+        const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
         let currentTickets = {};
         if (fs.existsSync(storePath)) {
-            try { currentTickets = JSON.parse(fs.readFileSync(storePath, 'utf-8')); } catch (e) {}
+            currentTickets = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
         }
 
         for (let i = 0; i < inboxData.length; i++) {
@@ -376,62 +315,28 @@ async function checkCompletedProjects() {
                 const allFinished = projectTickets.every(t => t.status === 'done' || t.status === 'failed');
 
                 if (allFinished) {
-                    console.log(`[Autonomy] Project ${project.id} finished! Preparing professional HTML delivery...`);
+                    console.log(`[Autonomy] Project ${project.id} finished! Sending email...`);
 
-                    let taskResultsHtml = '';
+                    let detailedReport = `Hello,\n\nYour requested project "${project.subject}" has been completed.\n\n`;
+                    detailedReport += `--------------------------------------------------\n`;
+                    detailedReport += `EXECUTIVE SUMMARY:\n`;
+                    detailedReport += `--------------------------------------------------\n\n`;
+
                     projectTickets.forEach(ticket => {
-                        const content = (ticket.workResult || ticket.workError || 'Verified').replace(/\n/g, '<br>');
-                        taskResultsHtml += `
-                            <div style="margin-bottom: 25px;">
-                                <h3 style="color: #34495e; margin-bottom: 5px;">${ticket.title}</h3>
-                                <p style="font-size: 12px; color: #7f8c8d; margin: 0;">Agent: <strong>${ticket.assigneeRole?.toUpperCase() || 'SYSTEM'}</strong></p>
-                                <div style="margin-top: 10px; padding-left: 15px; border-left: 2px solid #3498db; color: #333;">
-                                    ${content}
-                                </div>
-                            </div>
-                        `;
+                        detailedReport += `[Agent: ${ticket.assigneeRole}] - TASK: ${ticket.title}\n`;
+                        detailedReport += `Result:\n${ticket.workResult || ticket.workError || 'Verified'}\n\n`;
                     });
 
-                    const htmlTemplate = `
-<html>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee;">
-    <p>Hi there,</p>
-    <p>Your requested intelligence brief is ready. Our AI agents have completed the following analysis for your project.</p>
-    
-    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-
-    <h2 style="color: #2c3e50; margin-bottom: 10px;">${project.subject}</h2>
-    <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} | <strong>TBS Marketing Intelligence Delivery</strong></p>
-
-    <div style="margin-top: 30px;">
-        ${taskResultsHtml}
-    </div>
-
-    <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-
-    <h3 style="color: #34495e;">Strategic Takeaways</h3>
-    <ul style="color: #444;">
-        <li><strong>Autonomously Generated:</strong> This report was compiled and verified by the TBS Market Intelligence Bot.</li>
-        <li><strong>Platform Context:</strong> Insights are tailored for AEO and Knowledge Retrieval systems.</li>
-    </ul>
-
-    <p style="margin-top: 30px;">Best regards,<br>
-    <strong>TBS Marketing Team</strong><br>
-    SEO / AEO / GEO for the AI Search Era<br>
-    <a href="https://tbs-marketing.com" style="color: #3498db; text-decoration: none;">tbs-marketing.com</a></p>
-</body>
-</html>
-                    `;
+                    detailedReport += `--------------------------------------------------\n`;
+                    detailedReport += `Best Regards,\nYour Autonomous Team @ TBS Marketing\n`;
 
                     await mailer.sendMail({
-                        from: '"TBS Marketing Intelligence" <agent@tbs-marketing.com>',
+                        from: '"Clawport Bot at TBS" <agent@tbs-marketing.com>',
                         to: project.from,
-                        replyTo: 'leo.tbsmarketing@gmail.com',
                         subject: `FINAL DELIVERY: ${project.subject}`,
-                        html: htmlTemplate
+                        text: detailedReport
                     });
 
-                    console.log(`[Autonomy] Final HTML delivery email sent for Project ${project.id}.`);
                     project.status = 'complete';
                     modified = true;
                 }
@@ -446,18 +351,13 @@ async function checkCompletedProjects() {
     }
 }
 
-// Main execution loop with Overlap Protection
+// Main execution loop
 async function mainLoop() {
-    try {
-        await checkEmails();
-        await runAgentWork();
-        await checkCompletedProjects();
-    } catch (e) {
-        console.error('[MainLoop] Error:', e);
-    }
-    // Schedule next run only AFTER current one finishes
-    setTimeout(mainLoop, 30000); 
+    await checkEmails();
+    await runAgentWork();
+    await checkCompletedProjects();
 }
 
-console.log('Starting Autonomous Agent loop (Safety v2)...');
+console.log('Starting Autonomous Agent loop...');
 mainLoop();
+setInterval(mainLoop, 30000); // 30 second cycle
