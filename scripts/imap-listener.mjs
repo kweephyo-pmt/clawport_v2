@@ -147,6 +147,11 @@ IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
 
         // 2. CREATE TICKETS DIRECTLY IN KANBAN STORE
         const storePath = path.join(WORKSPACE_PATH, '..', '..', 'clawport-kanban', 'store.json');
+        const storeDir = path.dirname(storePath);
+        if (!fs.existsSync(storeDir)) {
+            fs.mkdirSync(storeDir, { recursive: true });
+        }
+        
         let store = {};
         if (fs.existsSync(storePath)) {
             try { store = JSON.parse(fs.readFileSync(storePath, 'utf-8')); } catch (e) {}
