@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
+import { homedir } from 'node:os' // Import homedir directly
 import { requireEnv } from '@/lib/env'
 
 function getStoreFilePath() {
-    const workspace = requireEnv('WORKSPACE_PATH')
-    // We store it one level up from the main workspace to keep it persistent across agent runs
-    return path.join(workspace, '..', '..', 'clawport-kanban', 'store.json')
+    // Explicitly use the user's home directory to avoid permission issues on VPS
+    // 2. CREATE TICKETS DIRECTLY IN KANBAN STORE
+    return path.join(homedir(), 'clawport-kanban', 'store.json')
 }
 
 function ensureDir() {
