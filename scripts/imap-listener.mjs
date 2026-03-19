@@ -163,10 +163,11 @@ async function checkEmails() {
     if (isCheckingEmails) return;
     isCheckingEmails = true;
 
-    const client = new ImapFlow(IMAP_CONFIG);
-    const pendingEmails = [];
-
     try {
+        const client = new ImapFlow(IMAP_CONFIG);
+        const pendingEmails = [];
+
+        try {
         await client.connect();
 
         let lock = await client.getMailboxLock('INBOX');
@@ -189,7 +190,11 @@ async function checkEmails() {
     } catch (err) {
         console.error('IMAP Error:', err);
     } finally {
-        await client.logout();
+        try {
+            await client.logout();
+        } catch (logoutErr) {
+            // Connection is already dropped, so ignore this error
+        }
     }
 
     // Process them offline so IMAP doesn't timeout waiting for LLM
@@ -215,8 +220,9 @@ async function checkEmails() {
             console.error('Failed to parse downloaded email:', e);
         }
     }
-
-    isCheckingEmails = false;
+    } finally {
+        isCheckingEmails = false;
+    }
 }
 
 // Helper to call OpenAI gateway for agent work
@@ -404,9 +410,13 @@ async function checkCompletedProjects() {
 
 // Main execution loop
 async function mainLoop() {
-    await checkEmails();
-    await runAgentWork();
-    await checkCompletedProjects();
+    try {
+        await checkEmails();
+        await runAgentWork();
+        await checkCompletedProjects();
+    } catch (err) {
+        console.error('Error in mainLoop:', err);
+    }
 }
 
 console.log('Starting Autonomous Agent loop...');
