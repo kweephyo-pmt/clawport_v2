@@ -69,6 +69,25 @@ function ensureStoreDir() {
     }
 }
 
+function formatPlainTextReport(project, tickets) {
+    const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    let lines = [];
+    lines.push('Project Delivery Report');
+    lines.push(`Subject: ${project.subject}`);
+    lines.push(`Date: ${dateStr}`);
+    lines.push('');
+    for (const ticket of tickets) {
+        const content = ticket.workResult || ticket.workError || 'No content.';
+        lines.push(`Title: ${ticket.title}`);
+        lines.push(`Agent: ${ticket.assigneeRole || 'SYSTEM'}`);
+        lines.push(content.trim());
+        lines.push('');
+    }
+    lines.push('—');
+    lines.push('TBS Marketing Intelligence Bot');
+    return lines.join('\n');
+}
+
 function isQuickSummaryRequest(subject = '', body = '') {
     const text = `${subject}\n${body}`.toLowerCase();
     const quickMatchers = [
@@ -409,69 +428,17 @@ async function checkCompletedProjects() {
                 if (allFinished) {
                     console.log(`[Autonomy] Project ${project.id} finished! Preparing professional HTML delivery...`);
 
-                    let taskResultsHtml = '';
-                    projectTickets.forEach(ticket => {
-                        const content = (ticket.workResult || ticket.workError || 'Verified').replace(/\n/g, '<br>');
-                        taskResultsHtml += `
-                            <div style="margin-bottom: 25px;">
-                                <h3 style="color: #34495e; margin-bottom: 5px; font-size: 18px;">${ticket.title}</h3>
-                                <p style="font-size: 11px; color: #7f8c8d; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Agent: <strong>${ticket.assigneeRole || 'SYSTEM'}</strong></p>
-                                <div style="margin-top: 10px; padding-left: 15px; border-left: 2px solid #3498db; color: #333; font-size: 14px; line-height: 1.6;">
-                                    ${content}
-                                </div>
-                            </div>
-                        `;
-                    });
-
-                    const htmlTemplate = `
-<html>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 650px; margin: 0 auto; padding: 25px; border: 1px solid #eee; border-radius: 12px; background-color: #fcfcfc;">
-    <div style="text-align: center; margin-bottom: 30px;">
-        <h1 style="color: #2c3e50; margin: 0; font-size: 24px;">Project Delivery Report</h1>
-        <p style="color: #95a5a6; font-size: 14px;">TBS Marketing Intelligence Center</p>
-    </div>
-
-    <p style="font-size: 15px;">Hi there,</p>
-    <p style="font-size: 15px;">Your requested intelligence brief is ready. Our specialized AI agents have completed the following analysis for your project.</p>
-    
-    <hr style="border: none; border-top: 1px solid #f1f1f1; margin: 25px 0;">
-
-    <h2 style="color: #2c3e50; margin-bottom: 5px; font-size: 20px;">${project.subject}</h2>
-    <p style="font-size: 12px; color: #95a5a6; margin-top: 0;"><strong>Date:</strong> ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-
-    <div style="margin-top: 35px;">
-        ${taskResultsHtml}
-    </div>
-
-    <hr style="border: none; border-top: 1px solid #f1f1f1; margin: 40px 0;">
-
-    <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
-        <h3 style="color: #34495e; font-size: 15px; margin-top: 0;">Strategic Takeaways</h3>
-        <ul style="color: #555; font-size: 13px; padding-left: 20px; line-height: 1.8;">
-            <li><strong>Autonomously Generated:</strong> Evaluated and verified by the TBS Market Intelligence Bot.</li>
-            <li><strong>Optimized Context:</strong> Content structured for AEO, GEO, and RAG-based systems.</li>
-            <li><strong>Next Steps:</strong> Review the results and move tickets to Archive if satisfied.</li>
-        </ul>
-    </div>
-
-    <p style="margin-top: 40px; font-size: 14px; text-align: center; color: #7f8c8d;">
-        Best regards,<br>
-        <strong style="color: #2c3e50;">TBS Marketing Team</strong><br>
-        <a href="https://tbs-marketing.com" style="color: #3498db; text-decoration: none;">tbs-marketing.com</a>
-    </p>
-</body>
-</html>
-                    `;
+                    const textReport = formatPlainTextReport(project, projectTickets);
 
                     await mailer.sendMail({
                         from: '"TBS Marketing Intelligence" <agent@tbs-marketing.com>',
                         replyTo: 'agent@tbs-marketing.com',
                         to: project.from,
                         subject: `FINAL DELIVERY: ${project.subject}`,
-                        html: htmlTemplate
+                        text: textReport
                     });
 
-                    console.log(`[Autonomy] Final HTML delivery email sent for Project ${project.id}.`);
+                    console.log(`[Autonomy] Plain-text delivery email sent for Project ${project.id}.`);
                     project.status = 'complete';
                     modified = true;
                 }
