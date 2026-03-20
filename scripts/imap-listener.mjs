@@ -71,16 +71,40 @@ function ensureStoreDir() {
 
 function formatPlainTextReport(project, tickets) {
     const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+    // Prefer a Jarvis synthesis if it succeeded
+    const jarvis = tickets.find(
+        (t) => t.assigneeRole === 'jarvis' && t.workState !== 'failed' && typeof t.workResult === 'string' && t.workResult.trim()
+    );
+    if (jarvis) {
+        return [
+            `${project.subject} — delivered ${dateStr}`,
+            '',
+            jarvis.workResult.trim(),
+            '',
+            '—',
+            'TBS Marketing Intelligence Bot',
+        ].join('\n');
+    }
+
+    // Otherwise, include only successful task outputs and suppress failures/timeouts
+    const successful = tickets.filter(
+        (t) => t.workState !== 'failed' && t.status === 'done' && typeof t.workResult === 'string' && t.workResult.trim()
+    );
+
     const lines = [];
     lines.push(`${project.subject} — delivered ${dateStr}`);
     lines.push('');
 
-    for (const ticket of tickets) {
-        const content = ticket.workResult || ticket.workError || 'No content.';
-        const agentLabel = ticket.assigneeRole ? ` · ${ticket.assigneeRole}` : '';
-        lines.push(`${ticket.title}${agentLabel}`);
-        lines.push(content.trim());
-        lines.push('');
+    if (successful.length === 0) {
+        lines.push('No successful task outputs. Some tasks failed. Please rerun or adjust and retry.');
+    } else {
+        for (const ticket of successful) {
+            const agentLabel = ticket.assigneeRole ? ` · ${ticket.assigneeRole}` : '';
+            lines.push(`${ticket.title}${agentLabel}`);
+            lines.push(ticket.workResult.trim());
+            lines.push('');
+        }
     }
 
     lines.push('—');
