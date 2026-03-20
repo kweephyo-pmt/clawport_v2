@@ -60,6 +60,14 @@ function getStoreFilePath() {
     // Both on Mac and VPS, we want to store it in ~/.openclaw/clawport-kanban/store.json
     return path.join(homedir(), '.openclaw', 'clawport-kanban', 'store.json');
 }
+
+function ensureStoreDir() {
+    const storePath = getStoreFilePath();
+    const dir = path.dirname(storePath);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+}
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || '18789';
 
@@ -150,6 +158,44 @@ IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
 
         inbox.push(newProject);
         fs.writeFileSync(inboxPath, JSON.stringify(inbox, null, 2));
+
+        // Also materialize these tasks into the kanban store so the autonomy loop can execute them
+        ensureStoreDir();
+        const storePath = getStoreFilePath();
+        let store = {};
+        if (fs.existsSync(storePath)) {
+            try {
+                store = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+            } catch (e) {
+                store = {};
+            }
+        }
+
+        const now = Date.now();
+        for (const task of newProject.tasks) {
+            const ticketId = task.id || generateId();
+            // Avoid overwriting any existing tickets with the same id
+            if (store[ticketId]) continue;
+
+            store[ticketId] = {
+                id: ticketId,
+                projectId,
+                title: task.title,
+                description: `Project Context: ${subject}\n\n${task.description || ''}`,
+                status: 'todo',
+                priority: task.priority || 'medium',
+                assigneeId: null,
+                assigneeRole: task.assigneeRole || null,
+                workState: 'idle',
+                workStartedAt: null,
+                workError: null,
+                workResult: null,
+                createdAt: now,
+                updatedAt: now,
+            };
+        }
+
+        fs.writeFileSync(storePath, JSON.stringify(store, null, 2));
 
         console.log(`Saved new project ${projectId} with ${tasks.length} tasks.`);
     } catch (e) {
