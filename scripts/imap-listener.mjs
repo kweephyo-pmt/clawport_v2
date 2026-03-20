@@ -71,18 +71,18 @@ function ensureStoreDir() {
 
 function formatPlainTextReport(project, tickets) {
     const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    let lines = [];
-    lines.push('Project Delivery Report');
-    lines.push(`Subject: ${project.subject}`);
-    lines.push(`Date: ${dateStr}`);
+    const lines = [];
+    lines.push(`${project.subject} — delivered ${dateStr}`);
     lines.push('');
+
     for (const ticket of tickets) {
         const content = ticket.workResult || ticket.workError || 'No content.';
-        lines.push(`Title: ${ticket.title}`);
-        lines.push(`Agent: ${ticket.assigneeRole || 'SYSTEM'}`);
+        const agentLabel = ticket.assigneeRole ? ` · ${ticket.assigneeRole}` : '';
+        lines.push(`${ticket.title}${agentLabel}`);
         lines.push(content.trim());
         lines.push('');
     }
+
     lines.push('—');
     lines.push('TBS Marketing Intelligence Bot');
     return lines.join('\n');
