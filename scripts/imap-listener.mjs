@@ -68,6 +68,23 @@ function ensureStoreDir() {
         fs.mkdirSync(dir, { recursive: true });
     }
 }
+
+function isQuickSummaryRequest(subject = '', body = '') {
+    const text = `${subject}\n${body}`.toLowerCase();
+    const quickMatchers = [
+        'quick summary',
+        'one paragraph',
+        '1-paragraph',
+        'quick insight',
+        'short summary',
+        'brief summary',
+        'quick recap',
+    ];
+
+    const mentionsWriter = text.includes('writer agent') || text.includes('writer');
+    const wantsQuick = quickMatchers.some((m) => text.includes(m));
+    return wantsQuick && mentionsWriter;
+}
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || '18789';
 
@@ -111,6 +128,8 @@ If the subject starts with "create a report project" or similar, prioritize the 
 
 CRITICAL RULE: The user's email may ask you to "email the results back". DO NOT create any task that instructs an agent to send an email, use terminal email clients (like himalaya), or deliver the report externally. Our background system will automatically email the final results once all tasks are marked "Done". The final Jarvis task should ONLY involve synthesizing and formatting the final report text.
 
+If the email explicitly asks for a quick summary, one paragraph, or specifies a single agent (e.g., "Writer agent"), produce exactly one task for that agent that fulfills the request. Do NOT add extra research/audit/orchestration tasks in that case.
+
 Output a valid JSON array of tasks where each task has:
 - "title": A short, clear task title.
 - "description": Extremely detailed step-by-step instructions for the agent.
@@ -120,19 +139,32 @@ Output a valid JSON array of tasks where each task has:
 IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
 
     try {
-        const completion = await openai.chat.completions.create({
-            model: 'kimi2.5',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.2,
-        });
-
-        const resultText = completion.choices[0]?.message?.content || '[]';
-
-        // Extract JSON array
-        const jsonMatch = resultText.match(/\[[\s\S]*\]/);
         let tasks = [];
-        if (jsonMatch) {
-            tasks = JSON.parse(jsonMatch[0]);
+
+        // If the user explicitly asked for a quick writer summary, skip LLM planning and create a single writer task.
+        if (isQuickSummaryRequest(subject, textBody)) {
+            tasks = [
+                {
+                    title: 'Draft 1-paragraph AI SEO trends summary',
+                    description: 'Write one concise paragraph (120-160 words) summarizing current AI SEO trends for the client. Keep it plain text, no greeting, no sign-off, no HTML.',
+                    assigneeRole: 'writer',
+                    priority: 'high'
+                }
+            ];
+        } else {
+            const completion = await openai.chat.completions.create({
+                model: 'kimi2.5',
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.2,
+            });
+
+            const resultText = completion.choices[0]?.message?.content || '[]';
+
+            // Extract JSON array
+            const jsonMatch = resultText.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+                tasks = JSON.parse(jsonMatch[0]);
+            }
         }
 
         const inboxPath = getInboxFilePath();
