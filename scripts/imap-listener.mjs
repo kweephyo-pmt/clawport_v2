@@ -69,47 +69,189 @@ function ensureStoreDir() {
     }
 }
 
-function formatPlainTextReport(project, tickets) {
+function escapeHtml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function toHumanText(input = '') {
+    let text = String(input || '');
+
+    // Remove fenced code blocks entirely.
+    text = text.replace(/```[\s\S]*?```/g, '');
+
+    // Remove markdown emphasis noise.
+    text = text
+        .replace(/\*\*(.*?)\*\*/g, '$1')
+        .replace(/__(.*?)__/g, '$1')
+        .replace(/`([^`]+)`/g, '$1');
+
+    const lines = text.split('\n');
+    const cleaned = [];
+
+    for (let rawLine of lines) {
+        let line = rawLine.trim();
+        if (!line) {
+            cleaned.push('');
+            continue;
+        }
+
+        // Strip markdown heading markers.
+        line = line.replace(/^#{1,6}\s+/, '');
+
+        // Ignore markdown horizontal rules.
+        if (/^[-_*]{3,}$/.test(line)) continue;
+
+        // Convert markdown table rows to plain text, skip separator rows.
+        const isTableSeparator = /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$/.test(line);
+        if (isTableSeparator) continue;
+        if (line.includes('|')) {
+            const parts = line.split('|').map((p) => p.trim()).filter(Boolean);
+            if (parts.length >= 2) line = parts.join(' - ');
+        }
+
+        // Normalize unordered bullets.
+        line = line.replace(/^[-*+]\s+/, '• ');
+
+        // Remove bot signature noise if already included elsewhere.
+        if (line.toLowerCase() === 'tbs marketing intelligence bot') continue;
+        if (line === '—') continue;
+
+        cleaned.push(line);
+    }
+
+    return cleaned
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function humanTextToHtmlBlocks(text = '') {
+    const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const blocks = [];
+
+    for (const para of paragraphs) {
+        const lines = para.split('\n').map((l) => l.trim()).filter(Boolean);
+        const allBullets = lines.length > 0 && lines.every((l) => /^•\s+/.test(l));
+        const allNumbered = lines.length > 0 && lines.every((l) => /^\d+\.\s+/.test(l));
+
+        if (allBullets) {
+            const items = lines.map((l) => `<li>${escapeHtml(l.replace(/^•\s+/, ''))}</li>`).join('');
+            blocks.push(`<ul style="margin:0 0 14px 20px;padding:0;line-height:1.6;color:#1f2937;">${items}</ul>`);
+            continue;
+        }
+
+        if (allNumbered) {
+            const items = lines.map((l) => `<li>${escapeHtml(l.replace(/^\d+\.\s+/, ''))}</li>`).join('');
+            blocks.push(`<ol style="margin:0 0 14px 20px;padding:0;line-height:1.6;color:#1f2937;">${items}</ol>`);
+            continue;
+        }
+
+        blocks.push(`<p style="margin:0 0 14px;line-height:1.65;color:#1f2937;">${escapeHtml(lines.join(' '))}</p>`);
+    }
+
+    return blocks.join('\n');
+}
+
+function formatDeliveryReport(project, tickets) {
     const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
     // Prefer a Jarvis synthesis if it succeeded
     const jarvis = tickets.find(
         (t) => t.assigneeRole === 'jarvis' && t.workState !== 'failed' && typeof t.workResult === 'string' && t.workResult.trim()
     );
+    let mainBody = '';
+
     if (jarvis) {
-        return [
-            `${project.subject} — delivered ${dateStr}`,
-            '',
-            jarvis.workResult.trim(),
-            '',
-            '—',
-            'TBS Marketing Intelligence Bot',
-        ].join('\n');
+        mainBody = toHumanText(jarvis.workResult);
     }
 
     // Otherwise, include only successful task outputs and suppress failures/timeouts
-    const successful = tickets.filter(
-        (t) => t.workState !== 'failed' && t.status === 'done' && typeof t.workResult === 'string' && t.workResult.trim()
-    );
+    if (!mainBody) {
+        const successful = tickets.filter(
+            (t) => t.workState !== 'failed' && t.status === 'done' && typeof t.workResult === 'string' && t.workResult.trim()
+        );
 
-    const lines = [];
-    lines.push(`${project.subject} — delivered ${dateStr}`);
-    lines.push('');
-
-    if (successful.length === 0) {
-        lines.push('No successful task outputs. Some tasks failed. Please rerun or adjust and retry.');
-    } else {
-        for (const ticket of successful) {
-            const agentLabel = ticket.assigneeRole ? ` · ${ticket.assigneeRole}` : '';
-            lines.push(`${ticket.title}${agentLabel}`);
-            lines.push(ticket.workResult.trim());
-            lines.push('');
+        if (successful.length === 0) {
+            mainBody = 'No successful task outputs were available. Some tasks failed. Please review and retry.';
+        } else {
+            const combined = [];
+            for (const ticket of successful) {
+                const agentLabel = ticket.assigneeRole ? ` (${ticket.assigneeRole})` : '';
+                combined.push(`${ticket.title}${agentLabel}`);
+                combined.push(toHumanText(ticket.workResult));
+                combined.push('');
+            }
+            mainBody = combined.join('\n').trim();
         }
     }
 
-    lines.push('—');
-    lines.push('TBS Marketing Intelligence Bot');
-    return lines.join('\n');
+    const text = [
+        `${project.subject} — delivered ${dateStr}`,
+        '',
+        mainBody,
+        '',
+        'TBS Marketing Intelligence Bot',
+    ].join('\n').trim();
+
+    const htmlBody = humanTextToHtmlBlocks(mainBody);
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+</head>
+<body style="margin:0;padding:24px;background:#f5f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+    <tr>
+      <td style="padding:18px 22px;background:#0f172a;color:#ffffff;">
+        <div style="font-size:13px;opacity:0.9;">TBS Marketing Intelligence</div>
+        <div style="font-size:20px;font-weight:700;margin-top:4px;">${escapeHtml(project.subject || 'Project Delivery')}</div>
+        <div style="font-size:13px;opacity:0.9;margin-top:6px;">Delivered ${escapeHtml(dateStr)}</div>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:22px;">
+        ${htmlBody}
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:14px 22px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;">
+        TBS Marketing Intelligence Bot
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+    return { text, html };
+}
+
+// Enforce dependency order between roles for a project
+const ROLE_DEPENDENCIES = {
+    analyst: ['trace'],
+    strategist: ['analyst'],
+    jarvis: ['analyst', 'strategist'],
+    auditor: ['jarvis', 'strategist', 'analyst'],
+};
+
+function canStartTicket(ticket, store) {
+    if (!ticket.projectId) return true;
+    const deps = ROLE_DEPENDENCIES[ticket.assigneeRole] || [];
+    if (deps.length === 0) return true;
+
+    const projectTickets = Object.values(store).filter((t) => t.projectId === ticket.projectId);
+    for (const depRole of deps) {
+        const blocker = projectTickets.find(
+            (t) => t.assigneeRole === depRole && t.status !== 'done'
+        );
+        if (blocker) return false;
+    }
+    return true;
 }
 
 function isQuickSummaryRequest(subject = '', body = '') {
@@ -354,23 +496,32 @@ async function executeAgentWork(agentId, ticket) {
         'strategist': 'You are a Content Strategist. Provide a roadmap and unique angles.',
         'writer': 'You are a Content Writer. Draft high-quality copy in professional brand voice.',
         'auditor': 'You are a Quality Auditor. Review work for errors and alignment.',
-        'jarvis': 'You are the Orchestrator. Coordinate final results and brief the user.'
+        'jarvis': 'You are the Orchestrator. Coordinate final results and brief the user in clear business language. Use plain text prose, no markdown tables, no code blocks, and no file paths.'
     };
     const basePrompt = rolePrompts[ticket.assigneeRole] || 'Complete the assigned task effectively.';
     const fullPrompt = `${basePrompt}\n\nTask: ${ticket.title}\nDescription: ${ticket.description}`;
 
+    const request = () => openai.chat.completions.create({
+        model: 'kimi2.5',
+        messages: [
+            { role: 'system', content: `You are an AI Agent assigned to a professional task. Be thorough and actionable.` },
+            { role: 'user', content: fullPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 900,
+        timeout: 120000, // 120s for longer analyses
+    });
+
     try {
-        const completion = await openai.chat.completions.create({
-            model: 'kimi2.5',
-            messages: [
-                { role: 'system', content: `You are an AI Agent assigned to a professional task. Be thorough and actionable.` },
-                { role: 'user', content: fullPrompt }
-            ],
-            temperature: 0.3,
-        });
+        const completion = await request();
         return { success: true, content: completion.choices[0]?.message?.content || '' };
     } catch (e) {
-        return { success: false, error: e.message };
+        try {
+            const completion = await request(); // one retry
+            return { success: true, content: completion.choices[0]?.message?.content || '' };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
     }
 }
 
@@ -387,6 +538,11 @@ async function runAgentWork() {
             const ticket = store[id];
             // Only pick up 'todo' tickets that are truly idle and have an assignee
             if (ticket.status === 'todo' && ticket.workState === 'idle' && ticket.assigneeRole) {
+                // Enforce role dependencies so tasks run in the intended order
+                if (!canStartTicket(ticket, store)) {
+                    continue;
+                }
+
                 console.log(`[Autonomy] Starting work on ticket "${ticket.title}" for agent "${ticket.assigneeRole}"...`);
 
                 // Mark as working
@@ -452,14 +608,15 @@ async function checkCompletedProjects() {
                 if (allFinished) {
                     console.log(`[Autonomy] Project ${project.id} finished! Preparing professional HTML delivery...`);
 
-                    const textReport = formatPlainTextReport(project, projectTickets);
+                    const delivery = formatDeliveryReport(project, projectTickets);
 
                     await mailer.sendMail({
                         from: '"TBS Marketing Intelligence" <agent@tbs-marketing.com>',
                         replyTo: 'agent@tbs-marketing.com',
                         to: project.from,
                         subject: `FINAL DELIVERY: ${project.subject}`,
-                        text: textReport
+                        text: delivery.text,
+                        html: delivery.html
                     });
 
                     console.log(`[Autonomy] Plain-text delivery email sent for Project ${project.id}.`);
