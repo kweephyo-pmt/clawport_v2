@@ -422,23 +422,43 @@ IMPORTANT: ONLY output valid JSON array. No markdown, no preamble.`;
 
 let isCheckingEmails = false;
 
+// Exponential backoff state for IMAP reconnections
+let imapBackoffMs = 5_000;          // starts at 5 s
+const IMAP_BACKOFF_MAX_MS = 300_000; // cap at 5 min
+const IMAP_BACKOFF_FACTOR = 2;
+let imapNextRetryAt = 0;             // epoch ms; 0 means "can try now"
+
+/** Transient network codes that should trigger backoff rather than a hard error log */
+const TRANSIENT_IMAP_CODES = new Set([
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'ETIMEDOUT',
+    'ENOTFOUND',
+    'ClosedAfterConnectTLS',
+    'ClosedAfterConnect',
+]);
+
 async function checkEmails() {
     if (isCheckingEmails) return;
+
+    // Respect backoff window
+    if (Date.now() < imapNextRetryAt) return;
+
     isCheckingEmails = true;
+    const client = new ImapFlow({ ...IMAP_CONFIG, logger: false });
+    const pendingEmails = [];
 
     try {
-        const client = new ImapFlow(IMAP_CONFIG);
-        const pendingEmails = [];
-
-        try {
         await client.connect();
+
+        // Reset backoff on successful connection
+        imapBackoffMs = 5_000;
+        imapNextRetryAt = 0;
 
         let lock = await client.getMailboxLock('INBOX');
         try {
-            // Unseen messages
             const messages = client.fetch({ unseen: true }, { source: true, uid: true });
-
-            for await (let message of messages) {
+            for await (const message of messages) {
                 pendingEmails.push({ source: message.source, uid: message.uid });
             }
 
@@ -446,32 +466,41 @@ async function checkEmails() {
             for (const msg of pendingEmails) {
                 await client.messageFlagsAdd({ uid: msg.uid }, ['\\Seen'], { uid: true });
             }
-
         } finally {
             lock.release();
         }
+
+        await client.logout();
     } catch (err) {
-        console.error('IMAP Error:', err);
-    } finally {
-        try {
-            await client.logout();
-        } catch (logoutErr) {
-            // Connection is already dropped, so ignore this error
+        const code = err.code || '';
+        if (TRANSIENT_IMAP_CODES.has(code)) {
+            console.warn(`[IMAP] Transient error (${code}). Retrying in ${imapBackoffMs / 1000}s...`);
+        } else {
+            console.error('[IMAP] Connection error:', err.message || err);
         }
+
+        // Schedule the next retry with exponential backoff
+        imapNextRetryAt = Date.now() + imapBackoffMs;
+        imapBackoffMs = Math.min(imapBackoffMs * IMAP_BACKOFF_FACTOR, IMAP_BACKOFF_MAX_MS);
+
+        // Best-effort cleanup; ignore errors from an already-broken socket
+        try { client.close(); } catch (_) { }
+    } finally {
+        isCheckingEmails = false;
     }
 
-    // Process them offline so IMAP doesn't timeout waiting for LLM
+    // Process downloaded emails offline so IMAP doesn't time out waiting for the LLM
     for (const msg of pendingEmails) {
         try {
             const mail = await simpleParser(msg.source);
             const subject = mail.subject || '';
             const textBody = mail.text || mail.html || '';
             const from = mail.from?.value[0]?.address || 'Unknown';
-
             const fromAddr = from.toLowerCase();
 
-            // Only process emails from our authorized senders
-            const isAuthorized = fromAddr.endsWith('@tbs-marketing.com') || fromAddr === 'leo.tbsmarketing@gmail.com';
+            const isAuthorized =
+                fromAddr.endsWith('@tbs-marketing.com') ||
+                fromAddr === 'leo.tbsmarketing@gmail.com';
 
             if (!isAuthorized) {
                 console.log(`Skipping unauthorized sender: ${from}`);
@@ -482,9 +511,6 @@ async function checkEmails() {
         } catch (e) {
             console.error('Failed to parse downloaded email:', e);
         }
-    }
-    } finally {
-        isCheckingEmails = false;
     }
 }
 
@@ -634,17 +660,27 @@ async function checkCompletedProjects() {
     }
 }
 
-// Main execution loop
+// Process-level safety net — prevents silent crashes from unexpected rejections
+process.on('unhandledRejection', (reason) => {
+    console.error('[Process] Unhandled promise rejection (non-fatal):', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('[Process] Uncaught exception (non-fatal):', err);
+});
+
+// Main execution loop — self-scheduling so a slow cycle never stacks up
 async function mainLoop() {
     try {
         await checkEmails();
         await runAgentWork();
         await checkCompletedProjects();
     } catch (err) {
-        console.error('Error in mainLoop:', err);
+        console.error('[mainLoop] Unexpected error:', err);
+    } finally {
+        // Schedule the next cycle 30 s after THIS cycle finishes (not a fixed interval)
+        setTimeout(mainLoop, 30_000);
     }
 }
 
 console.log('Starting Autonomous Agent loop...');
 mainLoop();
-setInterval(mainLoop, 30000); // 30 second cycle
